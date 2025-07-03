@@ -1,0 +1,378 @@
+openapi: 3.0.3
+info:
+  title: Tayaria Tyre Assist API
+  version: "1.0"
+  description: API for warranty and claim management (retailer, customer, master admin)
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /admin/login:
+    post:
+      summary: Master admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminLoginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminLoginResponse'
+        '401':
+          description: Invalid credentials
+
+  /retailer/login:
+    post:
+      summary: Retailer login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetailerLoginRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailerLoginResponse'
+        '401':
+          description: Invalid credentials
+
+  /warranties:
+    post:
+      summary: Register a new warranty
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWarrantyRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Warranty'
+    get:
+      summary: Get warranties by car plate
+      parameters:
+        - in: query
+          name: car_plate
+          schema:
+            type: string
+          required: true
+          description: Car plate to search for
+      responses:
+        '200':
+          description: List of warranties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Warranty'
+
+  /warranties/valid:
+    get:
+      summary: Check if car plate has a valid warranty
+      parameters:
+        - in: query
+          name: car_plate
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Validity and warranty info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  warranty:
+                    $ref: '#/components/schemas/Warranty'
+
+  /warranties/{id}/receipt:
+    get:
+      summary: Get warranty receipt URL
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Receipt URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receipt_url:
+                    type: string
+
+  /claims:
+    post:
+      summary: Create a new claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClaimRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+    get:
+      summary: Get claims (by car plate, status, or all for retailer)
+      parameters:
+        - in: query
+          name: car_plate
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [unacknowledged, pending, approved, rejected]
+      responses:
+        '200':
+          description: List of claims
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Claim'
+
+  /claims/{id}/tag_warranty:
+    patch:
+      summary: Tag a warranty to a claim (master)
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                warranty_id:
+                  type: string
+      responses:
+        '200':
+          description: Updated claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{id}/status:
+    patch:
+      summary: Change claim status (master)
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeClaimStatusRequest'
+      responses:
+        '200':
+          description: Updated claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{id}/close:
+    patch:
+      summary: Retailer closes a claim
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+      responses:
+        '200':
+          description: Updated claim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+components:
+  schemas:
+    AdminLoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+    AdminLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        admin:
+          $ref: '#/components/schemas/Admin'
+    Admin:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        password_hash:
+          type: string
+
+    RetailerLoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required: [username, password]
+    RetailerLoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        shop:
+          $ref: '#/components/schemas/Shop'
+    Shop:
+      type: object
+      properties:
+        id:
+          type: string
+        shop_name:
+          type: string
+        address:
+          type: string
+        contact:
+          type: string
+        username:
+          type: string
+        password_hash:
+          type: string
+
+    CreateWarrantyRequest:
+      type: object
+      properties:
+        customer_name:
+          type: string
+        car_plate:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+        purchase_date:
+          type: string
+        receipt_url:
+          type: string
+      required: [customer_name, car_plate, purchase_date, receipt_url]
+    Warranty:
+      type: object
+      properties:
+        id:
+          type: string
+        customer_name:
+          type: string
+        car_plate:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+        purchase_date:
+          type: string
+        receipt_url:
+          type: string
+        status:
+          type: string
+        created_date:
+          type: string
+        expiration_date:
+          type: string
+        tagged_claim_id:
+          type: string
+
+    CreateClaimRequest:
+      type: object
+      properties:
+        customer_name:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+        car_plate:
+          type: string
+        description:
+          type: string
+      required: [customer_name, car_plate, description]
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+        customer_name:
+          type: string
+        phone_number:
+          type: string
+        email:
+          type: string
+        car_plate:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+        tagged_warranty_id:
+          type: string
+        date_settled:
+          type: string
+        rejection_reason:
+          type: string
+        date_closed:
+          type: string
+
+    ChangeClaimStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        rejection_reason:
+          type: string 
