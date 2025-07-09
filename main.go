@@ -52,6 +52,9 @@ func main() {
 	r.GET("/api/test/user/:uuid", handlers.GetUserByUUID)
 	r.GET("/api/test/user/name/:name", handlers.GetUserByName)
 
+	// Health check
+	r.GET("/api/ping", handlers.Ping)
+
 	// Public routes
 	r.POST("/api/auth/login", handlers.LoginUser)
 	r.POST("/api/auth/logout", handlers.LogoutUser)

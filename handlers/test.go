@@ -80,3 +80,8 @@ func GetUserByName(c *gin.Context) {
 		"user":    user,
 	})
 }
+
+// Ping endpoint for health check
+func Ping(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"message": "pong"})
+}
