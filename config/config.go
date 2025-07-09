@@ -26,13 +26,18 @@ func Init() error {
 		log.Fatal("APP_ENV environment variable is not set")
 	}
 
-	// Load the appropriate .env file
-	envFile := ".env." + env
-	log.Printf("Loading environment file: %s", envFile)
+	// Only try to load .env file if not in production (Render uses environment variables)
+	if env != "production" {
+		// Load the appropriate .env file
+		envFile := ".env." + env
+		log.Printf("Loading environment file: %s", envFile)
 
-	// Look for .env file in the current directory
-	if err := godotenv.Load(envFile); err != nil {
-		return fmt.Errorf("error loading .env file: %v", err)
+		// Look for .env file in the current directory
+		if err := godotenv.Load(envFile); err != nil {
+			log.Printf("Warning: Could not load .env file: %v", err)
+		}
+	} else {
+		log.Printf("Production environment detected, using system environment variables")
 	}
 
 	// Debug: Print all environment variables
