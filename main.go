@@ -56,14 +56,11 @@ func main() {
 	r.GET("/api/ping", handlers.Ping)
 
 	// Public routes
-	r.POST("/api/auth/login", handlers.LoginUser)
-	r.POST("/api/auth/logout", handlers.LogoutUser)
 	// Admin login should be public
 	r.POST("/api/admin/login", handlers.AdminLogin)
 
-	// User routes
+	// User routes (now public, no auth middleware)
 	userRoutes := r.Group("/api/user")
-	userRoutes.Use(middleware.AuthMiddleware())
 	{
 		userRoutes.GET("/:phoneNumber", handlers.GetUserInformation)
 		userRoutes.PUT("/:phoneNumber", handlers.EditUserInformation)
@@ -80,7 +77,7 @@ func main() {
 
 	// Admin routes
 	adminRoutes := r.Group("/api/admin")
-	adminRoutes.Use(middleware.AuthMiddleware(), middleware.AdminMiddleware())
+	adminRoutes.Use(middleware.AdminMiddleware())
 	{
 		// TODO: Add admin-protected routes here as they are implemented
 	}

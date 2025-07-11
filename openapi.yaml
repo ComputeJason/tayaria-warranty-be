@@ -45,7 +45,7 @@ paths:
         '401':
           description: Invalid credentials
 
-  /warranties:
+  /user/warranty:
     post:
       summary: Register a new warranty
       requestBody:
@@ -61,11 +61,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Warranty'
+        '400':
+          description: Bad request - validation error
+        '500':
+          description: Internal server error
+
+  /user/warranties/car-plate/{carPlate}:
     get:
       summary: Get warranties by car plate
       parameters:
-        - in: query
-          name: car_plate
+        - in: path
+          name: carPlate
           schema:
             type: string
           required: true
@@ -79,16 +85,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Warranty'
+        '500':
+          description: Internal server error
 
-  /warranties/valid:
+  /user/warranties/valid/{carPlate}:
     get:
       summary: Check if car plate has a valid warranty
       parameters:
-        - in: query
-          name: car_plate
+        - in: path
+          name: carPlate
           schema:
             type: string
           required: true
+          description: Car plate to search for
       responses:
         '200':
           description: Validity and warranty info
@@ -101,8 +110,10 @@ paths:
                     type: boolean
                   warranty:
                     $ref: '#/components/schemas/Warranty'
+        '500':
+          description: Internal server error
 
-  /warranties/{id}/receipt:
+  /user/warranty/receipt/{id}:
     get:
       summary: Get warranty receipt URL
       parameters:
@@ -110,7 +121,9 @@ paths:
           name: id
           schema:
             type: string
+            format: uuid
           required: true
+          description: Warranty ID
       responses:
         '200':
           description: Receipt URL
@@ -121,8 +134,12 @@ paths:
                 properties:
                   receipt_url:
                     type: string
+        '404':
+          description: Warranty not found
+        '500':
+          description: Internal server error
 
-  /claims:
+  /user/claim:
     post:
       summary: Create a new claim
       requestBody:
@@ -138,18 +155,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Claim'
+        '400':
+          description: Bad request - validation error
+        '404':
+          description: Warranty not found
+        '500':
+          description: Internal server error
     get:
-      summary: Get claims (by car plate, status, or all for retailer)
+      summary: Get claims with optional filtering
       parameters:
         - in: query
-          name: car_plate
+          name: warranty_id
           schema:
             type: string
+            format: uuid
+          description: Filter by warranty ID
         - in: query
           name: status
           schema:
             type: string
             enum: [unacknowledged, pending, approved, rejected]
+          description: Filter by claim status
       responses:
         '200':
           description: List of claims
@@ -159,16 +185,20 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Claim'
+        '500':
+          description: Internal server error
 
-  /claims/{id}/tag_warranty:
-    patch:
-      summary: Tag a warranty to a claim (master)
+  /user/claim/{id}/tag-warranty:
+    post:
+      summary: Tag a warranty to a claim
       parameters:
         - in: path
           name: id
           schema:
             type: string
+            format: uuid
           required: true
+          description: Claim ID
       requestBody:
         required: true
         content:
@@ -178,6 +208,7 @@ paths:
               properties:
                 warranty_id:
                   type: string
+                  format: uuid
       responses:
         '200':
           description: Updated claim
@@ -185,16 +216,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Claim'
+        '400':
+          description: Bad request - invalid status or validation error
+        '404':
+          description: Claim or warranty not found
+        '500':
+          description: Internal server error
 
-  /claims/{id}/status:
-    patch:
-      summary: Change claim status (master)
+  /user/claim/{id}/change-status:
+    post:
+      summary: Change claim status
       parameters:
         - in: path
           name: id
           schema:
             type: string
+            format: uuid
           required: true
+          description: Claim ID
       requestBody:
         required: true
         content:
@@ -208,23 +247,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Claim'
+        '400':
+          description: Bad request - invalid status transition or validation error
+        '404':
+          description: Claim not found
+        '500':
+          description: Internal server error
 
-  /claims/{id}/close:
-    patch:
-      summary: Retailer closes a claim
+  /user/claim/{id}/close:
+    post:
+      summary: Close a claim
       parameters:
         - in: path
           name: id
           schema:
             type: string
+            format: uuid
           required: true
+          description: Claim ID
       responses:
         '200':
-          description: Updated claim
+          description: Claim closed successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Claim'
+                type: object
+                properties:
+                  message:
+                    type: string
+                  claim:
+                    $ref: '#/components/schemas/Claim'
+        '400':
+          description: Bad request - claim cannot be closed
+        '404':
+          description: Claim not found
+        '500':
+          description: Internal server error
 
 components:
   schemas:
@@ -287,27 +345,33 @@ components:
     CreateWarrantyRequest:
       type: object
       properties:
-        customer_name:
+        name:
           type: string
-        car_plate:
-          type: string
+          description: Customer's full name
         phone_number:
           type: string
+          description: Customer's phone number
         email:
           type: string
+          description: Customer's email address (optional)
         purchase_date:
           type: string
-        receipt_url:
+          format: date-time
+          description: Date of purchase (ISO 8601 format)
+        car_plate:
           type: string
-      required: [customer_name, car_plate, purchase_date, receipt_url]
+          description: Vehicle registration number
+        receipt:
+          type: string
+          description: URL to the receipt document
+      required: [name, phone_number, purchase_date, car_plate, receipt]
     Warranty:
       type: object
       properties:
         id:
           type: string
-        customer_name:
-          type: string
-        car_plate:
+          format: uuid
+        name:
           type: string
         phone_number:
           type: string
@@ -315,64 +379,63 @@ components:
           type: string
         purchase_date:
           type: string
-        receipt_url:
+          format: date-time
+        expiry_date:
           type: string
-        status:
+          format: date-time
+        car_plate:
           type: string
-        created_date:
+        receipt:
           type: string
-        expiration_date:
+        created_at:
           type: string
-        tagged_claim_id:
+          format: date-time
+        updated_at:
           type: string
+          format: date-time
 
     CreateClaimRequest:
       type: object
       properties:
-        customer_name:
+        warranty_id:
           type: string
-        phone_number:
-          type: string
-        email:
-          type: string
-        car_plate:
-          type: string
+          format: uuid
+          description: ID of the warranty this claim is for
         description:
           type: string
-      required: [customer_name, car_plate, description]
+          description: Description of the claim issue
+      required: [warranty_id, description]
     Claim:
       type: object
       properties:
         id:
           type: string
-        customer_name:
+          format: uuid
+        warranty_id:
           type: string
-        phone_number:
-          type: string
-        email:
-          type: string
-        car_plate:
-          type: string
+          format: uuid
         description:
           type: string
         status:
           type: string
+          enum: [unacknowledged, pending, approved, rejected]
+        admin_comment:
+          type: string
         created_at:
           type: string
-        tagged_warranty_id:
+          format: date-time
+        updated_at:
           type: string
-        date_settled:
-          type: string
-        rejection_reason:
-          type: string
-        date_closed:
-          type: string
+          format: date-time
 
     ChangeClaimStatusRequest:
       type: object
       properties:
         status:
           type: string
-          enum: [pending, approved, rejected]
-        rejection_reason:
-          type: string 
+          enum: [unacknowledged, pending, approved, rejected]
+          description: New status for the claim
+        admin_comment:
+          type: string
+          description: Admin comment (required for rejected status)
+      required: [status] 

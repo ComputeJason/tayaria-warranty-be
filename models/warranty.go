@@ -1,24 +1,25 @@
 package models
 
+import "time"
+
 type Warranty struct {
-	ID             string `json:"id"`
-	CustomerName   string `json:"customer_name"`
-	CarPlate       string `json:"car_plate"`
-	PhoneNumber    string `json:"phone_number"`
-	Email          string `json:"email"`
-	PurchaseDate   string `json:"purchase_date"`
-	ReceiptURL     string `json:"receipt_url"`
-	Status         string `json:"status"`
-	CreatedDate    string `json:"created_date"`
-	ExpirationDate string `json:"expiration_date"`
-	TaggedClaimID  string `json:"tagged_claim_id"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	PhoneNumber  string    `json:"phone_number"`
+	Email        string    `json:"email"`
+	PurchaseDate time.Time `json:"purchase_date"`
+	ExpiryDate   time.Time `json:"expiry_date"`
+	CarPlate     string    `json:"car_plate"`
+	Receipt      string    `json:"receipt"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type CreateWarrantyRequest struct {
-	CustomerName string `json:"customer_name" binding:"required"`
-	CarPlate     string `json:"car_plate" binding:"required"`
-	PhoneNumber  string `json:"phone_number"`
-	Email        string `json:"email"`
-	PurchaseDate string `json:"purchase_date" binding:"required"`
-	ReceiptURL   string `json:"receipt_url" binding:"required"`
+	Name         string    `json:"name" binding:"required"`
+	PhoneNumber  string    `json:"phone_number" binding:"required"`
+	Email        string    `json:"email"`
+	PurchaseDate time.Time `json:"purchase_date" binding:"required"`
+	CarPlate     string    `json:"car_plate" binding:"required"`
+	Receipt      string    `json:"receipt" binding:"required"`
 }

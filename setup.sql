@@ -27,28 +27,24 @@ CREATE TABLE IF NOT EXISTS admins (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create warranties table (use user_id UUID from Supabase auth.users)
+-- Create warranties table
 CREATE TABLE IF NOT EXISTS warranties (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
-    shop_id UUID NOT NULL REFERENCES shops(id),
-    pattern VARCHAR(100) NOT NULL,
-    size VARCHAR(50) NOT NULL,
-    date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    serial_number VARCHAR(100) UNIQUE NOT NULL,
-    retailer VARCHAR(100),
-    purchase_date DATE,
+    name VARCHAR(100) NOT NULL,
+    phone_number VARCHAR(20) NOT NULL,
+    email VARCHAR(100),
+    purchase_date DATE NOT NULL,
+    expiry_date DATE NOT NULL,
+    car_plate VARCHAR(20) NOT NULL,
+    receipt VARCHAR(500) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create claims table (use user_id UUID from Supabase auth.users)
+-- Create claims table
 CREATE TABLE IF NOT EXISTS claims (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
     warranty_id UUID NOT NULL REFERENCES warranties(id),
-    shop_id UUID NOT NULL REFERENCES shops(id),
-    date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     description TEXT NOT NULL,
     status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
     admin_comment TEXT,
@@ -69,24 +65,22 @@ INSERT INTO admins (username, password, role, shop_id) VALUES
     ('admin3', 'adminpass3', 'admin', (SELECT id FROM shops WHERE shop_name = 'Tyre Shop JB')),
     ('superadmin', 'superpass', 'super_user', NULL);
 
--- Insert test data for warranties (replace UUIDs with real Supabase user IDs for real data)
-INSERT INTO warranties (user_id, shop_id, pattern, size, serial_number, retailer, purchase_date) VALUES
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM shops WHERE shop_name = 'Tyre Shop KL'), 'Michelin Pilot Sport 4', '225/45R17', 'MS4-2024-001', 'Tyre Shop KL', '2024-01-15'),
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM shops WHERE shop_name = 'Tyre Shop Penang'), 'Bridgestone Turanza T005', '205/55R16', 'BT5-2024-002', 'Tyre Shop Penang', '2024-02-01'),
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM shops WHERE shop_name = 'Tyre Shop JB'), 'Goodyear Eagle F1', '235/40R18', 'GE1-2024-003', 'Tyre Shop JB', '2024-03-10');
+-- Insert test data for warranties
+INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, car_plate, receipt) VALUES
+    ('John Doe', '+60123456789', 'john.doe@email.com', '2024-01-15', '2024-07-15', 'ABC1234', 'https://example.com/receipt1.pdf'),
+    ('Jane Smith', '+60123456790', 'jane.smith@email.com', '2024-02-01', '2024-08-01', 'XYZ5678', 'https://example.com/receipt2.pdf'),
+    ('Bob Johnson', '+60123456791', NULL, '2024-03-10', '2024-09-10', 'DEF9012', 'https://example.com/receipt3.pdf');
 
--- Insert test data for claims (replace UUIDs with real Supabase user IDs for real data)
-INSERT INTO claims (user_id, warranty_id, shop_id, description, status, admin_comment) VALUES
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM warranties WHERE serial_number = 'MS4-2024-001'), (SELECT id FROM shops WHERE shop_name = 'Tyre Shop KL'), 'Tyre sidewall damage', 'pending', NULL),
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM warranties WHERE serial_number = 'BT5-2024-002'), (SELECT id FROM shops WHERE shop_name = 'Tyre Shop Penang'), 'Premature tread wear', 'approved', 'Approved after inspection'),
-    ('58577453-ed0c-4cc8-8f80-5cec0703087f', (SELECT id FROM warranties WHERE serial_number = 'GE1-2024-003'), (SELECT id FROM shops WHERE shop_name = 'Tyre Shop JB'), 'Manufacturing defect', 'rejected', 'Not covered under warranty terms');
+-- Insert test data for claims
+INSERT INTO claims (warranty_id, description, status, admin_comment) VALUES
+    ((SELECT id FROM warranties WHERE car_plate = 'ABC1234'), 'Tyre sidewall damage', 'pending', NULL),
+    ((SELECT id FROM warranties WHERE car_plate = 'XYZ5678'), 'Premature tread wear', 'approved', 'Approved after inspection'),
+    ((SELECT id FROM warranties WHERE car_plate = 'DEF9012'), 'Manufacturing defect', 'rejected', 'Not covered under warranty terms');
 
 -- Create indexes for better performance
-CREATE INDEX IF NOT EXISTS idx_warranties_user_id ON warranties(user_id);
-CREATE INDEX IF NOT EXISTS idx_warranties_serial ON warranties(serial_number);
-CREATE INDEX IF NOT EXISTS idx_warranties_shop ON warranties(shop_id);
-CREATE INDEX IF NOT EXISTS idx_claims_user_id ON claims(user_id);
+CREATE INDEX IF NOT EXISTS idx_warranties_car_plate ON warranties(car_plate);
+CREATE INDEX IF NOT EXISTS idx_warranties_phone_number ON warranties(phone_number);
+CREATE INDEX IF NOT EXISTS idx_warranties_expiry_date ON warranties(expiry_date);
 CREATE INDEX IF NOT EXISTS idx_claims_warranty ON claims(warranty_id);
-CREATE INDEX IF NOT EXISTS idx_claims_shop ON claims(shop_id);
 CREATE INDEX IF NOT EXISTS idx_claims_status ON claims(status);
 CREATE INDEX IF NOT EXISTS idx_admins_shop ON admins(shop_id);
