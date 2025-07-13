@@ -169,29 +169,29 @@ INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, c
      'STU505', 'https://example.com/receipt8.pdf');
 
 -- Insert test claims
-INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, status, warranty_id) VALUES
+INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, status, warranty_id, date_settled) VALUES
 -- Unacknowledged claims (no warranty_id tagged yet)
-((SELECT id FROM shops WHERE username = 'testshop1'), 'John Doe', '+60123456789', 'john@example.com', 'ABC1234', 'unacknowledged', NULL),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'unacknowledged', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'unacknowledged', NULL),
+((SELECT id FROM shops WHERE username = 'testshop1'), 'John Doe', '+60123456789', 'john@example.com', 'ABC1234', 'unacknowledged', NULL, NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'unacknowledged', NULL, NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'unacknowledged', NULL, NULL),
 
 -- Pending claims (no warranty_id tagged yet)
-((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'XYZ5678', 'pending', NULL),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'pending', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'pending', NULL),
+((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'XYZ5678', 'pending', NULL, NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'pending', NULL, NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'pending', NULL, NULL),
 
 -- Approved claims (must have warranty_id tagged)
 ((SELECT id FROM shops WHERE username = 'testshop1'), 'Bob Johnson', '+60123456791', 'bob@example.com', 'DEF9012', 'approved', 
- (SELECT id FROM warranties WHERE car_plate = 'DEF9012')),
+ (SELECT id FROM warranties WHERE car_plate = 'DEF9012'), CURRENT_TIMESTAMP - INTERVAL '5 days'),
 ((SELECT id FROM shops WHERE username = 'testshop2'), 'Emma Davis', '+60123456705', 'emma@example.com', 'PQR404', 'approved',
- (SELECT id FROM warranties WHERE car_plate = 'PQR404')),
+ (SELECT id FROM warranties WHERE car_plate = 'PQR404'), CURRENT_TIMESTAMP - INTERVAL '3 days'),
 ((SELECT id FROM shops WHERE username = 'testshop3'), 'Alex Tan', '+60123456706', 'alex@example.com', 'STU505', 'approved',
- (SELECT id FROM warranties WHERE car_plate = 'STU505')),
+ (SELECT id FROM warranties WHERE car_plate = 'STU505'), CURRENT_TIMESTAMP - INTERVAL '1 day'),
 
 -- Rejected claims (no warranty_id needed)
-((SELECT id FROM shops WHERE username = 'testshop1'), 'David Wilson', '+60123456707', 'david@example.com', 'ABC1234', 'rejected', NULL),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Grace Lee', '+60123456708', 'grace@example.com', 'XYZ5678', 'rejected', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'DEF9012', 'rejected', NULL);
+((SELECT id FROM shops WHERE username = 'testshop1'), 'David Wilson', '+60123456707', 'david@example.com', 'ABC1234', 'rejected', NULL, CURRENT_TIMESTAMP - INTERVAL '7 days'),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Grace Lee', '+60123456708', 'grace@example.com', 'XYZ5678', 'rejected', NULL, CURRENT_TIMESTAMP - INTERVAL '6 days'),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'DEF9012', 'rejected', NULL, CURRENT_TIMESTAMP - INTERVAL '4 days');
 
 -- Add tyre details for approved claims
 INSERT INTO tyre_details (claim_id, brand, size, cost) VALUES

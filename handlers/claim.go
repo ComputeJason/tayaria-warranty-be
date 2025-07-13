@@ -165,26 +165,18 @@ func ChangeClaimStatus(c *gin.Context) {
 func CloseClaim(c *gin.Context) {
 	claimID := c.Param("id")
 
-	// Get the current claim
-	claim, err := db.GetClaimByID(claimID)
+	// Close the claim
+	claim, err := db.CloseClaim(claimID)
 	if err != nil {
+		if err.Error() == "claim not found or not in approved/rejected status" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Can only close approved or rejected claims"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if claim == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
-		return
-	}
 
-	// Check if claim can be closed
-	if claim.Status != models.ApprovedStatus && claim.Status != models.RejectedStatus {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Can only close approved or rejected claims"})
-		return
-	}
-
-	// For now, we'll just return the claim as-is since our current schema doesn't have a "closed" status
-	// In a real implementation, you might want to add a "closed" status or a "closed_at" timestamp
-	c.JSON(http.StatusOK, gin.H{"message": "Claim closed successfully", "claim": claim})
+	c.JSON(http.StatusOK, claim)
 }
 
 // GET /api/master/claims

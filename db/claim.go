@@ -682,3 +682,72 @@ func RejectClaim(claimID string, reason string) (*models.Claim, error) {
 
 	return &claim, nil
 }
+
+// CloseClaim updates the date_closed field of a claim
+func CloseClaim(claimID string) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		UPDATE claims 
+		SET date_closed = CURRENT_TIMESTAMP,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND status IN ('approved', 'rejected')
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
+		          date_settled, date_closed, total_cost,
+		          customer_name, phone_number, email, car_plate,
+		          created_at, updated_at`
+
+	log.Printf("Executing SQL query: %s with params: [%s]", query, claimID)
+
+	var claim models.Claim
+	var warrantyID, rejectionReason pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+
+	err := db.QueryRow(context.Background(), query, claimID).Scan(
+		&claim.ID,
+		&warrantyID,
+		&claim.ShopID,
+		&claim.Status,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&claim.TotalCost,
+		&claim.CustomerName,
+		&claim.PhoneNumber,
+		&claim.Email,
+		&claim.CarPlate,
+		&createdAt,
+		&updatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("claim not found or not in approved/rejected status")
+		}
+		return nil, fmt.Errorf("failed to close claim: %v", err)
+	}
+
+	// Convert pgtype values to Go types
+	if warrantyID.Valid {
+		claim.WarrantyID = &warrantyID.String
+	}
+	if rejectionReason.Valid {
+		claim.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		claim.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		claim.DateClosed = &dateClosed.Time
+	}
+	if createdAt.Valid {
+		claim.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		claim.UpdatedAt = updatedAt.Time
+	}
+
+	return &claim, nil
+}
