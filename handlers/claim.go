@@ -94,21 +94,6 @@ func TagWarrantyToClaim(c *gin.Context) {
 		return
 	}
 
-	// Get the warranty to validate it's not expired and not tagged
-	warranty, err := db.GetValidWarrantyByCarPlate(claim.CarPlate)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if warranty == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid warranty available for this car plate"})
-		return
-	}
-	if warranty.ID != req.WarrantyID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "The provided warranty ID is not valid for this car plate"})
-		return
-	}
-
 	// Update the claim with the warranty ID
 	updatedClaim, err := db.UpdateClaimWarrantyID(claimID, req.WarrantyID)
 	if err != nil {
