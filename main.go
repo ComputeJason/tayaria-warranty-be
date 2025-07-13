@@ -48,41 +48,35 @@ func main() {
 		c.Next()
 	})
 
-	// Test routes
-	r.GET("/api/test/user/:uuid", handlers.GetUserByUUID)
-	r.GET("/api/test/user/name/:name", handlers.GetUserByName)
-
 	// Health check
 	r.GET("/api/ping", handlers.Ping)
 
-	// Public routes
-	// Admin login should be public
+	// Public auth routes
 	r.POST("/api/admin/login", handlers.AdminLogin)
+	r.POST("/api/master/login", handlers.MasterLogin)
 
-	// User routes (now public, no auth middleware)
+	// User routes (public, no auth middleware)
 	userRoutes := r.Group("/api/user")
 	{
-		userRoutes.GET("/:phoneNumber", handlers.GetUserInformation)
-		userRoutes.PUT("/:phoneNumber", handlers.EditUserInformation)
 		userRoutes.POST("/warranty", handlers.RegisterWarranty)
 		userRoutes.GET("/warranties/car-plate/:carPlate", handlers.GetWarrantiesByCarPlate)
 		userRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantyByCarPlate)
 		userRoutes.GET("/warranty/receipt/:id", handlers.GetWarrantyReceipt)
-		userRoutes.POST("/claim", handlers.CreateClaim)
-		userRoutes.GET("/claims/:shop_id", handlers.GetShopClaims)
-		userRoutes.GET("/claims", handlers.GetClaims) // Legacy endpoint
-		userRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
-		userRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
-		userRoutes.POST("/claim/:id/close", handlers.CloseClaim)
 	}
 
-	// Admin routes
+	// Admin routes (protected)
 	adminRoutes := r.Group("/api/admin")
 	adminRoutes.Use(middleware.AdminMiddleware())
 	{
-		// TODO: Add admin-protected routes here as they are implemented
+		// Claim management (moved from user routes)
+		adminRoutes.POST("/claim", handlers.CreateClaim)
+		adminRoutes.GET("/claims", handlers.GetShopClaims)
+		adminRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
+		adminRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
+		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim)
 	}
 
+	// Master admin routes (protected)
 	masterRoutes := r.Group("/api/master")
 	{
 		masterRoutes.POST("/account", handlers.CreateRetailAccount)

@@ -13,7 +13,7 @@ import (
 )
 
 // CreateClaim creates a new claim in the database
-func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
+func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
@@ -38,12 +38,12 @@ func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
 	`
 
 	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s]",
-		query, claimID, warranty.ID, claim.ShopID, "pending", claim.CustomerName, claim.PhoneNumber, claim.Email, claim.CarPlate)
+		query, claimID, warranty.ID, shopID, "pending", claim.CustomerName, claim.PhoneNumber, claim.Email, claim.CarPlate)
 
 	row := db.QueryRow(context.Background(), query,
 		claimID,
 		warranty.ID,
-		claim.ShopID,
+		shopID,
 		"pending", // Default status
 		claim.CustomerName,
 		claim.PhoneNumber,
@@ -98,7 +98,7 @@ func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
 // GetShopClaims retrieves claims for a specific shop
 func GetShopClaims(shopID string) ([]models.Claim, error) {
 	if db == nil {
-		return nil, fmt.Errorf("database connection not initialized")
+		return []models.Claim{}, fmt.Errorf("database connection not initialized")
 	}
 
 	query := `
@@ -113,11 +113,11 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 
 	rows, err := db.Query(context.Background(), query, shopID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query claims: %v", err)
+		return []models.Claim{}, fmt.Errorf("failed to query claims: %v", err)
 	}
 	defer rows.Close()
 
-	var claims []models.Claim
+	claims := []models.Claim{} // Initialize empty slice
 	for rows.Next() {
 		var claim models.Claim
 		var rejectionReason pgtype.Text
@@ -140,7 +140,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan claim: %v", err)
+			return []models.Claim{}, fmt.Errorf("failed to scan claim: %v", err)
 		}
 
 		// Convert pgtype values to Go types
@@ -164,7 +164,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating claims: %v", err)
+		return []models.Claim{}, fmt.Errorf("error iterating claims: %v", err)
 	}
 
 	return claims, nil

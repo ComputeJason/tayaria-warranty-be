@@ -8,16 +8,30 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create shops table (now includes admin credentials)
 CREATE TABLE IF NOT EXISTS shops (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    shop_name VARCHAR(100) NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_name VARCHAR(255) NOT NULL,
     address TEXT NOT NULL,
-    contact VARCHAR(20),
+    contact VARCHAR(50),
     username VARCHAR(50) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
-    role VARCHAR(20) NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'super_user')),
+    role VARCHAR(20) NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'master')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Create trigger to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE OR REPLACE TRIGGER update_shops_updated_at
+    BEFORE UPDATE ON shops
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 -- Create warranties table
 CREATE TABLE IF NOT EXISTS warranties (
@@ -35,28 +49,28 @@ CREATE TABLE IF NOT EXISTS warranties (
 
 -- Create claims table
 CREATE TABLE IF NOT EXISTS claims (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    warranty_id UUID NOT NULL REFERENCES warranties(id),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     shop_id UUID NOT NULL REFERENCES shops(id),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')),
-    rejection_reason TEXT,
-    date_settled TIMESTAMP WITH TIME ZONE,
-    date_closed TIMESTAMP WITH TIME ZONE,
-    -- Customer info (duplicated from form)
-    customer_name VARCHAR(100) NOT NULL,
-    phone_number VARCHAR(20) NOT NULL,
-    email VARCHAR(100),
+    warranty_id UUID,
     car_plate VARCHAR(20) NOT NULL,
+    description TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'closed')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP WITH TIME ZONE
 );
 
--- Insert test data for shops (now includes admin credentials)
+CREATE OR REPLACE TRIGGER update_claims_updated_at
+    BEFORE UPDATE ON claims
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert test data
 INSERT INTO shops (shop_name, address, contact, username, password, role) VALUES
-    ('Tyre Shop KL', '123 Jalan Ampang, Kuala Lumpur', '+60123456789', 'admin1', 'adminpass1', 'admin'),
-    ('Tyre Shop Penang', '456 Jalan Burma, Penang', '+60123456790', 'admin2', 'adminpass2', 'admin'),
-    ('Tyre Shop JB', '789 Jalan Tebrau, Johor Bahru', '+60123456791', 'admin3', 'adminpass3', 'admin'),
-    ('Master Admin', 'Corporate Office', '+60123456792', 'superadmin', 'superpass', 'super_user');
+('Master Admin', 'Corporate Office', '+60123456792', 'masteradmin', 'masterpass', 'master'),
+('Test Shop 1', '123 Test Street', '+60123456789', 'testshop1', 'password123', 'admin'),
+('Test Shop 2', '456 Test Avenue', '+60123456790', 'testshop2', 'password456', 'admin'),
+('Test Shop 3', '789 Test Road', '+60123456791', 'testshop3', 'password789', 'admin');
 
 -- Insert test data for warranties
 INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, car_plate, receipt) VALUES
@@ -64,11 +78,12 @@ INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, c
     ('Jane Smith', '+60123456790', 'jane.smith@email.com', '2024-02-01', '2024-08-01', 'XYZ5678', 'https://example.com/receipt2.pdf'),
     ('Bob Johnson', '+60123456791', NULL, '2024-03-10', '2024-09-10', 'DEF9012', 'https://example.com/receipt3.pdf');
 
--- Insert test data for claims
-INSERT INTO claims (warranty_id, shop_id, status, rejection_reason, customer_name, phone_number, email, car_plate) VALUES
-    ((SELECT id FROM warranties WHERE car_plate = 'ABC1234'), (SELECT id FROM shops WHERE username = 'admin1'), 'pending', NULL, 'John Doe', '+60123456789', 'john.doe@email.com', 'ABC1234'),
-    ((SELECT id FROM warranties WHERE car_plate = 'XYZ5678'), (SELECT id FROM shops WHERE username = 'admin2'), 'approved', NULL, 'Jane Smith', '+60123456790', 'jane.smith@email.com', 'XYZ5678'),
-    ((SELECT id FROM warranties WHERE car_plate = 'DEF9012'), (SELECT id FROM shops WHERE username = 'admin3'), 'rejected', 'Not covered under warranty terms', 'Bob Johnson', '+60123456791', NULL, 'DEF9012');
+-- Insert test claims
+INSERT INTO claims (shop_id, car_plate, description, status) VALUES
+((SELECT id FROM shops WHERE username = 'testshop1'), 'ABC123', 'Test claim 1', 'pending'),
+((SELECT id FROM shops WHERE username = 'testshop1'), 'DEF456', 'Test claim 2', 'approved'),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'GHI789', 'Test claim 3', 'rejected'),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'JKL012', 'Test claim 4', 'closed');
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_warranties_car_plate ON warranties(car_plate);

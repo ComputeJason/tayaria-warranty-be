@@ -17,8 +17,23 @@ func CreateClaim(c *gin.Context) {
 		return
 	}
 
+	// Get shop_id from context (set by AdminMiddleware)
+	shopID, exists := c.Get("shop_id")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Shop ID not found in context"})
+		return
+	}
+
+	// Create a complete request with shop_id from context
+	completeReq := models.CreateClaimRequest{
+		CustomerName: req.CustomerName,
+		PhoneNumber:  req.PhoneNumber,
+		Email:        req.Email,
+		CarPlate:     req.CarPlate,
+	}
+
 	// Create claim in database (includes warranty validation)
-	claim, err := db.CreateClaim(req)
+	claim, err := db.CreateClaim(completeReq, shopID.(string))
 	if err != nil {
 		if err.Error() == "no valid warranty found for car plate "+req.CarPlate {
 			c.JSON(http.StatusNotFound, gin.H{"error": "No valid warranty found for this car plate"})
@@ -31,33 +46,22 @@ func CreateClaim(c *gin.Context) {
 	c.JSON(http.StatusCreated, claim)
 }
 
-// GET /api/user/claims/{shop_id}
+// GET /api/admin/claims
 func GetShopClaims(c *gin.Context) {
-	shopID := c.Param("shop_id")
+	// Get shop_id from context (set by AdminMiddleware)
+	shopID, exists := c.Get("shop_id")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Shop ID not found in context"})
+		return
+	}
 
-	claims, err := db.GetShopClaims(shopID)
+	claims, err := db.GetShopClaims(shopID.(string))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, claims)
-}
-
-// GET /api/user/claims (legacy - keeping for backward compatibility)
-func GetClaims(c *gin.Context) {
-	warrantyID := c.Query("warranty_id")
-	status := c.Query("status")
-
-	// This is now deprecated, but keeping for backward compatibility
-	// You might want to update frontend to use GetShopClaims instead
-	c.JSON(http.StatusOK, gin.H{
-		"message": "This endpoint is deprecated. Please use GET /api/user/claims/{shop_id} instead",
-		"legacy_params": gin.H{
-			"warranty_id": warrantyID,
-			"status":      status,
-		},
-	})
 }
 
 // POST /api/user/claim/:id/tag-warranty

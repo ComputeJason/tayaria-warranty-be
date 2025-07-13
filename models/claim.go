@@ -33,7 +33,6 @@ type CreateClaimRequest struct {
 	PhoneNumber  string `json:"phone_number" binding:"required"`
 	Email        string `json:"email"`
 	CarPlate     string `json:"car_plate" binding:"required"`
-	ShopID       string `json:"shop_id" binding:"required"`
 }
 
 type UpdateClaimStatusRequest struct {
