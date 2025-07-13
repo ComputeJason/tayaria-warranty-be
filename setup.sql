@@ -1,4 +1,5 @@
 -- Drop existing tables if they exist (in correct order due to foreign key constraints)
+DROP TABLE IF EXISTS tyre_details CASCADE;
 DROP TABLE IF EXISTS claims CASCADE;
 DROP TABLE IF EXISTS warranties CASCADE;
 DROP TABLE IF EXISTS shops CASCADE;
@@ -72,6 +73,45 @@ CREATE OR REPLACE TRIGGER update_claims_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Add total_cost to claims table
+ALTER TABLE claims ADD COLUMN total_cost DECIMAL(10,2) DEFAULT 0.00;
+
+-- Create function to check max tyres per claim
+CREATE OR REPLACE FUNCTION check_max_tyres_per_claim()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (
+        SELECT COUNT(*)
+        FROM tyre_details
+        WHERE claim_id = NEW.claim_id
+    ) > 3  -- We check for > 3 because the current insert hasn't completed yet
+    THEN
+        RAISE EXCEPTION 'Maximum of 4 tyres allowed per claim';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create tyre_details table
+CREATE TABLE IF NOT EXISTS tyre_details (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    claim_id UUID REFERENCES claims(id),
+    brand VARCHAR(100) NOT NULL,
+    size VARCHAR(50) NOT NULL,
+    cost DECIMAL(10,2) NOT NULL CHECK (cost >= 0),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_claim
+        FOREIGN KEY (claim_id)
+        REFERENCES claims(id)
+        ON DELETE CASCADE
+);
+
+-- Create trigger to enforce max tyres
+CREATE TRIGGER enforce_max_tyres_per_claim
+    BEFORE INSERT ON tyre_details
+    FOR EACH ROW
+    EXECUTE FUNCTION check_max_tyres_per_claim();
+
 -- Insert test data
 INSERT INTO shops (shop_name, address, contact, username, password, role) VALUES
 ('Master Admin', 'Corporate Office', '+60123456792', 'master', 'master', 'master'),
@@ -82,31 +122,106 @@ INSERT INTO shops (shop_name, address, contact, username, password, role) VALUES
 
 -- Insert test data for warranties
 INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, car_plate, receipt) VALUES
-    ('John Doe', '+60123456789', 'john.doe@email.com', '2025-07-07', '2026-01-07', 'ABC1234', 'https://example.com/receipt1.pdf'),
-    ('Jane Smith', '+60123456790', 'jane.smith@email.com', '2024-02-01', '2024-08-01', 'XYZ5678', 'https://example.com/receipt2.pdf'),
-    ('07ob Johnson', '+60123456791', NULL, '2024-03-10', '2024-09-10', 'DEF9012', 'https://example.com/receipt3.pdf');
+    -- Two valid warranties for ABC1234 (same customer)
+    ('John Doe', '+60123456789', 'john.doe@email.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'ABC1234', 'https://example.com/receipt1.pdf'),
+    ('John Doe', '+60123456789', 'john.doe@email.com', 
+     CURRENT_DATE - INTERVAL '2 months', 
+     CURRENT_DATE + INTERVAL '4 months', 
+     'ABC1234', 'https://example.com/receipt2.pdf'),
+    
+    -- Valid warranty for XYZ5678
+    ('Jane Smith', '+60123456790', 'jane.smith@email.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'XYZ5678', 'https://example.com/receipt3.pdf'),
+    
+    -- Valid warranty for DEF9012
+    ('Bob Johnson', '+60123456791', NULL, 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'DEF9012', 'https://example.com/receipt4.pdf'),
+    
+    -- Valid warranty for JKL202
+    ('Tom Brown', '+60123456703', 'tom@example.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'JKL202', 'https://example.com/receipt5.pdf'),
+    
+    -- Valid warranty for MNO303
+    ('Lisa Wong', '+60123456704', 'lisa@example.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'MNO303', 'https://example.com/receipt6.pdf'),
+    
+    -- Valid warranty for PQR404
+    ('Emma Davis', '+60123456705', 'emma@example.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'PQR404', 'https://example.com/receipt7.pdf'),
+    
+    -- Valid warranty for STU505
+    ('Alex Tan', '+60123456706', 'alex@example.com', 
+     CURRENT_DATE - INTERVAL '1 month', 
+     CURRENT_DATE + INTERVAL '5 months', 
+     'STU505', 'https://example.com/receipt8.pdf');
 
 -- Insert test claims
 INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, status, warranty_id) VALUES
--- Unacknowledged claims
+-- Unacknowledged claims (no warranty_id tagged yet)
 ((SELECT id FROM shops WHERE username = 'testshop1'), 'John Doe', '+60123456789', 'john@example.com', 'ABC1234', 'unacknowledged', NULL),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Sarah Lee', '+60123456701', 'sarah@example.com', 'DEF789', 'unacknowledged', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Mike Chen', '+60123456702', 'mike@example.com', 'GHI101', 'unacknowledged', NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'unacknowledged', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'unacknowledged', NULL),
 
--- Pending claims
-((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'XYZ5678', 'pending', (SELECT id FROM warranties WHERE car_plate = 'XYZ5678')),
+-- Pending claims (no warranty_id tagged yet)
+((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'XYZ5678', 'pending', NULL),
 ((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'pending', NULL),
 ((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'pending', NULL),
 
--- Approved claims
-((SELECT id FROM shops WHERE username = 'testshop1'), 'Bob Johnson', '+60123456791', 'bob@example.com', 'DEF9012', 'approved', (SELECT id FROM warranties WHERE car_plate = 'DEF9012')),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Emma Davis', '+60123456705', 'emma@example.com', 'PQR404', 'approved', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Alex Tan', '+60123456706', 'alex@example.com', 'STU505', 'approved', NULL),
+-- Approved claims (must have warranty_id tagged)
+((SELECT id FROM shops WHERE username = 'testshop1'), 'Bob Johnson', '+60123456791', 'bob@example.com', 'DEF9012', 'approved', 
+ (SELECT id FROM warranties WHERE car_plate = 'DEF9012')),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Emma Davis', '+60123456705', 'emma@example.com', 'PQR404', 'approved',
+ (SELECT id FROM warranties WHERE car_plate = 'PQR404')),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Alex Tan', '+60123456706', 'alex@example.com', 'STU505', 'approved',
+ (SELECT id FROM warranties WHERE car_plate = 'STU505')),
 
--- Rejected claims
-((SELECT id FROM shops WHERE username = 'testshop1'), 'David Wilson', '+60123456707', 'david@example.com', 'VWX606', 'rejected', NULL),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Grace Lee', '+60123456708', 'grace@example.com', 'YZA707', 'rejected', NULL),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'BCD808', 'rejected', NULL);
+-- Rejected claims (no warranty_id needed)
+((SELECT id FROM shops WHERE username = 'testshop1'), 'David Wilson', '+60123456707', 'david@example.com', 'ABC1234', 'rejected', NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Grace Lee', '+60123456708', 'grace@example.com', 'XYZ5678', 'rejected', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'DEF9012', 'rejected', NULL);
+
+-- Add tyre details for approved claims
+INSERT INTO tyre_details (claim_id, brand, size, cost) VALUES
+    -- First approved claim (Bob Johnson - DEF9012) gets 2 tyres
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'DEF9012'),
+     'Michelin', '205/55R16', 450.00),
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'DEF9012'),
+     'Michelin', '205/55R16', 450.00),
+    
+    -- Second approved claim (Emma Davis - PQR404) gets 4 tyres
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
+     'Bridgestone', '215/45R17', 550.00),
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
+     'Bridgestone', '215/45R17', 550.00),
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
+     'Bridgestone', '215/45R17', 550.00),
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
+     'Bridgestone', '215/45R17', 550.00),
+    
+    -- Third approved claim (Alex Tan - STU505) gets 1 tyre
+    ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'STU505'),
+     'Continental', '225/40R18', 650.00);
+
+-- Update total_cost for claims with tyre details
+UPDATE claims c 
+SET total_cost = (
+    SELECT COALESCE(SUM(cost), 0) 
+    FROM tyre_details td 
+    WHERE td.claim_id = c.id
+);
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_warranties_car_plate ON warranties(car_plate);
