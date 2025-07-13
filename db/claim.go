@@ -18,6 +18,22 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	// First verify if the shop exists
+	var exists bool
+	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&exists)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check shop existence: %v", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("shop with ID %s does not exist", shopID)
+	}
+
+	// Parse shopID into UUID
+	shopUUID, err := uuid.Parse(shopID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid shop ID format: %v (shop_id: %s)", err, shopID)
+	}
+
 	// First, validate that the car plate has a valid warranty
 	warranty, err := GetValidWarrantyByCarPlate(claim.CarPlate)
 	if err != nil {
@@ -37,13 +53,12 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 		          customer_name, phone_number, email, car_plate, created_at, updated_at
 	`
 
-	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s]",
-		query, claimID, warranty.ID, shopID, "pending", claim.CustomerName, claim.PhoneNumber, claim.Email, claim.CarPlate)
+	log.Printf("Creating claim with params: claimID=%s, warrantyID=%s, shopID=%s", claimID, warranty.ID, shopUUID)
 
 	row := db.QueryRow(context.Background(), query,
 		claimID,
 		warranty.ID,
-		shopID,
+		shopUUID,
 		"pending", // Default status
 		claim.CustomerName,
 		claim.PhoneNumber,
@@ -102,7 +117,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	}
 
 	query := `
-		SELECT id, warranty_id, shop_id, status, date_settled, date_closed,
+		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
 		       customer_name, phone_number, email, car_plate, created_at, updated_at
 		FROM claims
 		WHERE shop_id = $1

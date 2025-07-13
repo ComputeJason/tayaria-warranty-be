@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"tayaria-warranty-be/db"
@@ -23,6 +24,8 @@ func CreateClaim(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Shop ID not found in context"})
 		return
 	}
+
+	log.Printf("Creating claim for shop ID: %v (type: %T)", shopID, shopID)
 
 	// Create a complete request with shop_id from context
 	completeReq := models.CreateClaimRequest{
