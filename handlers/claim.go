@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 
@@ -211,8 +212,8 @@ func GetAllClaims(c *gin.Context) {
 func GetClaimInfoByID(c *gin.Context) {
 	claimID := c.Param("id")
 
-	// Get the claim
-	claim, err := db.GetClaimByID(claimID)
+	// Get the claim with tyre details
+	claim, err := db.GetClaimWithTyreDetails(claimID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -222,7 +223,28 @@ func GetClaimInfoByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, claim)
+	// If claim has a warranty_id, get the warranty details
+	var warranty *models.Warranty
+	if claim.WarrantyID != nil {
+		warranties, err := db.GetWarrantiesByCarPlate(claim.CarPlate)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to get warranty details: %v", err)})
+			return
+		}
+		// Find the specific warranty
+		for _, w := range warranties {
+			if w.ID == *claim.WarrantyID {
+				warranty = &w
+				break
+			}
+		}
+	}
+
+	// Return combined response
+	c.JSON(http.StatusOK, gin.H{
+		"claim":    claim,
+		"warranty": warranty,
+	})
 }
 
 // POST /api/master/claim/:id/pending
@@ -248,6 +270,90 @@ func ChangeClaimStatusToPending(c *gin.Context) {
 
 	// Update claim status to pending
 	updatedClaim, err := db.UpdateClaimStatus(claimID, models.PendingStatus, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, updatedClaim)
+}
+
+// POST /api/master/claim/:id/accept
+func ChangeClaimStatusToAccepted(c *gin.Context) {
+	var req models.AcceptClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	claimID := c.Param("id")
+
+	// Get the current claim
+	claim, err := db.GetClaimByID(claimID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if claim == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+		return
+	}
+
+	// Check if claim is in pending status
+	if claim.Status != models.PendingStatus {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Can only accept claims in pending status"})
+		return
+	}
+
+	// Convert request tyre details to model
+	tyreDetails := make([]models.TyreDetail, len(req.TyreDetails))
+	for i, td := range req.TyreDetails {
+		tyreDetails[i] = models.TyreDetail{
+			Brand: td.Brand,
+			Size:  td.Size,
+			Cost:  td.Cost,
+		}
+	}
+
+	// Update claim status and add tyre details
+	updatedClaim, err := db.AcceptClaim(claimID, tyreDetails)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, updatedClaim)
+}
+
+// POST /api/master/claim/:id/reject
+func ChangeClaimStatusToRejected(c *gin.Context) {
+	var req models.RejectClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	claimID := c.Param("id")
+
+	// Get the current claim
+	claim, err := db.GetClaimByID(claimID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if claim == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+		return
+	}
+
+	// Check if claim is in pending status
+	if claim.Status != models.PendingStatus {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Can only reject claims in pending status"})
+		return
+	}
+
+	// Update claim status with rejection reason
+	updatedClaim, err := db.RejectClaim(claimID, req.RejectionReason)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

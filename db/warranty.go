@@ -114,12 +114,13 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 	for rows.Next() {
 		var warranty models.Warranty
 		var purchaseDate, expiryDate, createdAt, updatedAt pgtype.Timestamp
+		var email pgtype.Text
 
 		err := rows.Scan(
 			&warranty.ID,
 			&warranty.Name,
 			&warranty.PhoneNumber,
-			&warranty.Email,
+			&email,
 			&purchaseDate,
 			&expiryDate,
 			&warranty.CarPlate,
@@ -132,7 +133,10 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 			return nil, fmt.Errorf("failed to scan warranty: %v", err)
 		}
 
-		// Convert pgtype.Timestamp to time.Time
+		// Convert pgtype values to Go types
+		if email.Valid {
+			warranty.Email = email.String
+		}
 		if purchaseDate.Valid {
 			warranty.PurchaseDate = purchaseDate.Time
 		}
@@ -179,12 +183,13 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 
 	var warranty models.Warranty
 	var purchaseDate, expiryDate, createdAt, updatedAt pgtype.Timestamp
+	var email pgtype.Text
 
 	err := row.Scan(
 		&warranty.ID,
 		&warranty.Name,
 		&warranty.PhoneNumber,
-		&warranty.Email,
+		&email,
 		&purchaseDate,
 		&expiryDate,
 		&warranty.CarPlate,
@@ -200,7 +205,10 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 		return nil, fmt.Errorf("failed to get valid warranty: %v", err)
 	}
 
-	// Convert pgtype.Timestamp to time.Time
+	// Convert pgtype values to Go types
+	if email.Valid {
+		warranty.Email = email.String
+	}
 	if purchaseDate.Valid {
 		warranty.PurchaseDate = purchaseDate.Time
 	}
@@ -245,12 +253,13 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 	for rows.Next() {
 		var warranty models.Warranty
 		var purchaseDate, expiryDate, createdAt, updatedAt pgtype.Timestamp
+		var email pgtype.Text
 
 		err := rows.Scan(
 			&warranty.ID,
 			&warranty.Name,
 			&warranty.PhoneNumber,
-			&warranty.Email,
+			&email,
 			&purchaseDate,
 			&expiryDate,
 			&warranty.CarPlate,
@@ -263,7 +272,10 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 			return nil, fmt.Errorf("failed to scan warranty: %v", err)
 		}
 
-		// Convert pgtype.Timestamp to time.Time
+		// Convert pgtype values to Go types
+		if email.Valid {
+			warranty.Email = email.String
+		}
 		if purchaseDate.Valid {
 			warranty.PurchaseDate = purchaseDate.Time
 		}

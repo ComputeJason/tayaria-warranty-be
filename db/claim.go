@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"tayaria-warranty-be/models"
 
@@ -493,4 +494,191 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 	}
 
 	return claims, nil
+}
+
+// AcceptClaim changes claim status to approved and adds tyre details
+func AcceptClaim(claimID string, tyreDetails []models.TyreDetail) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	// Start a transaction
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// First update claim status to approved
+	updateClaimQuery := `
+		UPDATE claims 
+		SET status = $2, 
+		    updated_at = CURRENT_TIMESTAMP,
+		    date_settled = CURRENT_TIMESTAMP
+		WHERE id = $1 AND status = 'pending'
+		RETURNING id`
+
+	var claimIDResult string
+	err = tx.QueryRow(context.Background(), updateClaimQuery, claimID, models.ApprovedStatus).Scan(&claimIDResult)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("claim not found or not in pending status")
+		}
+		return nil, fmt.Errorf("failed to update claim status: %v", err)
+	}
+
+	// Insert tyre details
+	insertTyreQuery := `
+		INSERT INTO tyre_details (claim_id, brand, size, cost)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, created_at`
+
+	var totalCost float64
+	for i := range tyreDetails {
+		var tyreID string
+		var createdAt time.Time
+		err = tx.QueryRow(context.Background(), insertTyreQuery,
+			claimID,
+			tyreDetails[i].Brand,
+			tyreDetails[i].Size,
+			tyreDetails[i].Cost,
+		).Scan(&tyreID, &createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert tyre detail: %v", err)
+		}
+		tyreDetails[i].ID = tyreID
+		tyreDetails[i].ClaimID = claimID
+		tyreDetails[i].CreatedAt = createdAt
+		totalCost += tyreDetails[i].Cost
+	}
+
+	// Update total cost
+	updateCostQuery := `
+		UPDATE claims 
+		SET total_cost = $2
+		WHERE id = $1`
+
+	_, err = tx.Exec(context.Background(), updateCostQuery, claimID, totalCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update total cost: %v", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	// Get updated claim with tyre details
+	return GetClaimWithTyreDetails(claimID)
+}
+
+// GetClaimWithTyreDetails retrieves a claim with its tyre details
+func GetClaimWithTyreDetails(claimID string) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	// Get claim
+	claim, err := GetClaimByID(claimID)
+	if err != nil {
+		return nil, err
+	}
+	if claim == nil {
+		return nil, nil
+	}
+
+	// Get tyre details
+	query := `
+		SELECT id, claim_id, brand, size, cost, created_at
+		FROM tyre_details
+		WHERE claim_id = $1
+		ORDER BY created_at ASC`
+
+	rows, err := db.Query(context.Background(), query, claimID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tyre details: %v", err)
+	}
+	defer rows.Close()
+
+	var tyreDetails []models.TyreDetail
+	for rows.Next() {
+		var td models.TyreDetail
+		err := rows.Scan(
+			&td.ID,
+			&td.ClaimID,
+			&td.Brand,
+			&td.Size,
+			&td.Cost,
+			&td.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan tyre detail: %v", err)
+		}
+		tyreDetails = append(tyreDetails, td)
+	}
+
+	claim.TyreDetails = tyreDetails
+	return claim, nil
+}
+
+// RejectClaim changes claim status to rejected with a reason
+func RejectClaim(claimID string, reason string) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		UPDATE claims 
+		SET status = $2, 
+		    rejection_reason = $3,
+		    updated_at = CURRENT_TIMESTAMP,
+		    date_settled = CURRENT_TIMESTAMP
+		WHERE id = $1 AND status = 'pending'
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
+		          date_settled, date_closed, total_cost,
+		          customer_name, phone_number, email, car_plate,
+		          created_at, updated_at`
+
+	var claim models.Claim
+	var warrantyID, rejectionReason pgtype.Text
+	var dateSettled, dateClosed pgtype.Timestamp
+
+	err := db.QueryRow(context.Background(), query, claimID, models.RejectedStatus, reason).Scan(
+		&claim.ID,
+		&warrantyID,
+		&claim.ShopID,
+		&claim.Status,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&claim.TotalCost,
+		&claim.CustomerName,
+		&claim.PhoneNumber,
+		&claim.Email,
+		&claim.CarPlate,
+		&claim.CreatedAt,
+		&claim.UpdatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("claim not found or not in pending status")
+		}
+		return nil, fmt.Errorf("failed to update claim: %v", err)
+	}
+
+	if warrantyID.Valid {
+		claim.WarrantyID = &warrantyID.String
+	}
+	if rejectionReason.Valid {
+		claim.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		claim.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		claim.DateClosed = &dateClosed.Time
+	}
+
+	return &claim, nil
 }

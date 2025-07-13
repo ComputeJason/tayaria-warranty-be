@@ -84,6 +84,8 @@ func main() {
 		masterRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
 		masterRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
 		masterRoutes.POST("/claim/:id/pending", handlers.ChangeClaimStatusToPending)
+		masterRoutes.POST("/claim/:id/accept", handlers.ChangeClaimStatusToAccepted)
+		masterRoutes.POST("/claim/:id/reject", handlers.ChangeClaimStatusToRejected)
 		// warranty management
 		masterRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantiesForTagging)
 		// retail account management
