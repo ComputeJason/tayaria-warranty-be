@@ -71,16 +71,19 @@ func main() {
 		// Claim management (moved from user routes)
 		adminRoutes.POST("/claim", handlers.CreateClaim)
 		adminRoutes.GET("/claims", handlers.GetShopClaims)
-		adminRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
-		adminRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
-		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim)
+		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim) // Moved here from master routes
 	}
 
 	// Master admin routes (protected)
 	masterRoutes := r.Group("/api/master")
+	masterRoutes.Use(middleware.MasterMiddleware()) // Added master middleware
 	{
+		// retail account management
 		masterRoutes.POST("/account", handlers.CreateRetailAccount)
 		masterRoutes.GET("/account", handlers.GetRetailAccounts)
+		// claim management
+		masterRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
+		masterRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
 	}
 
 	// Get port from environment variable or default to 8080
