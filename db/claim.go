@@ -102,7 +102,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	}
 
 	query := `
-		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		SELECT id, warranty_id, shop_id, status, date_settled, date_closed,
 		       customer_name, phone_number, email, car_plate, created_at, updated_at
 		FROM claims
 		WHERE shop_id = $1
