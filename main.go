@@ -60,7 +60,7 @@ func main() {
 	{
 		userRoutes.POST("/warranty", handlers.RegisterWarranty)
 		userRoutes.GET("/warranties/car-plate/:carPlate", handlers.GetWarrantiesByCarPlate)
-		userRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantyByCarPlate)
+		userRoutes.GET("/warranties/valid/:carPlate", handlers.HasValidWarrantyByCarPlate)
 		userRoutes.GET("/warranty/receipt/:id", handlers.GetWarrantyReceipt)
 	}
 
@@ -71,19 +71,24 @@ func main() {
 		// Claim management (moved from user routes)
 		adminRoutes.POST("/claim", handlers.CreateClaim)
 		adminRoutes.GET("/claims", handlers.GetShopClaims)
-		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim) // Moved here from master routes
+		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim)
 	}
 
 	// Master admin routes (protected)
 	masterRoutes := r.Group("/api/master")
-	masterRoutes.Use(middleware.MasterMiddleware()) // Added master middleware
+	masterRoutes.Use(middleware.MasterMiddleware())
 	{
+		// claim management
+		masterRoutes.GET("/claims", handlers.GetAllClaims)
+		masterRoutes.GET("/claim/:id", handlers.GetClaimInfoByID)
+		masterRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
+		masterRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
+		masterRoutes.POST("/claim/:id/pending", handlers.ChangeClaimStatusToPending)
+		// warranty management
+		masterRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantiesForTagging)
 		// retail account management
 		masterRoutes.POST("/account", handlers.CreateRetailAccount)
 		masterRoutes.GET("/account", handlers.GetRetailAccounts)
-		// claim management
-		masterRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
-		masterRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
 	}
 
 	// Get port from environment variable or default to 8080

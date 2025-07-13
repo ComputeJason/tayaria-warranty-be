@@ -163,10 +163,13 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 	}
 
 	query := `
-		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
-		FROM warranties
-		WHERE car_plate = $1 AND expiry_date >= CURRENT_DATE
-		ORDER BY expiry_date DESC
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
+		FROM warranties w
+		LEFT JOIN claims c ON w.id = c.warranty_id
+		WHERE w.car_plate = $1 
+		AND w.expiry_date >= CURRENT_DATE
+		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
+		ORDER BY w.expiry_date DESC
 		LIMIT 1
 	`
 
@@ -212,6 +215,76 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 	}
 
 	return &warranty, nil
+}
+
+// GetAllValidWarrantiesForCarPlate retrieves all valid warranties for a car plate that can be tagged to a claim
+func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
+		FROM warranties w
+		LEFT JOIN claims c ON w.id = c.warranty_id
+		WHERE w.car_plate = $1 
+		AND w.expiry_date >= CURRENT_DATE
+		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
+		ORDER BY w.expiry_date DESC
+	`
+
+	log.Printf("Executing SQL query: %s with params: [%s]", query, carPlate)
+
+	rows, err := db.Query(context.Background(), query, carPlate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query warranties: %v", err)
+	}
+	defer rows.Close()
+
+	var warranties []models.Warranty
+	for rows.Next() {
+		var warranty models.Warranty
+		var purchaseDate, expiryDate, createdAt, updatedAt pgtype.Timestamp
+
+		err := rows.Scan(
+			&warranty.ID,
+			&warranty.Name,
+			&warranty.PhoneNumber,
+			&warranty.Email,
+			&purchaseDate,
+			&expiryDate,
+			&warranty.CarPlate,
+			&warranty.Receipt,
+			&createdAt,
+			&updatedAt,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan warranty: %v", err)
+		}
+
+		// Convert pgtype.Timestamp to time.Time
+		if purchaseDate.Valid {
+			warranty.PurchaseDate = purchaseDate.Time
+		}
+		if expiryDate.Valid {
+			warranty.ExpiryDate = expiryDate.Time
+		}
+		if createdAt.Valid {
+			warranty.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			warranty.UpdatedAt = updatedAt.Time
+		}
+
+		warranties = append(warranties, warranty)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating warranties: %v", err)
+	}
+
+	return warranties, nil
 }
 
 // GetWarrantyReceipt retrieves the receipt URL for a warranty

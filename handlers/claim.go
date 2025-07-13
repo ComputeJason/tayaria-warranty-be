@@ -94,21 +94,23 @@ func TagWarrantyToClaim(c *gin.Context) {
 		return
 	}
 
-	// Check if warranty exists
-	exists, err := db.CheckWarrantyExists(req.WarrantyID)
+	// Get the warranty to validate it's not expired and not tagged
+	warranty, err := db.GetValidWarrantyByCarPlate(claim.CarPlate)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Warranty not found"})
+	if warranty == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No valid warranty available for this car plate"})
+		return
+	}
+	if warranty.ID != req.WarrantyID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "The provided warranty ID is not valid for this car plate"})
 		return
 	}
 
 	// Update the claim with the warranty ID
-	// Note: This is a simplified implementation. In a real system, you might want to
-	// add additional validation to ensure the warranty isn't already tagged to another claim
-	updatedClaim, err := db.UpdateClaimStatus(claimID, claim.Status, claim.RejectionReason)
+	updatedClaim, err := db.UpdateClaimWarrantyID(claimID, req.WarrantyID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -197,4 +199,74 @@ func CloseClaim(c *gin.Context) {
 	// For now, we'll just return the claim as-is since our current schema doesn't have a "closed" status
 	// In a real implementation, you might want to add a "closed" status or a "closed_at" timestamp
 	c.JSON(http.StatusOK, gin.H{"message": "Claim closed successfully", "claim": claim})
+}
+
+// GET /api/master/claims
+func GetAllClaims(c *gin.Context) {
+	// Get status from query parameter
+	status := c.Query("status")
+
+	// Validate status parameter
+	if status != "unacknowledged" && status != "pending" && status != "history" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid status parameter. Must be one of: unacknowledged, pending, history"})
+		return
+	}
+
+	// Get claims based on status
+	claims, err := db.GetClaimsByStatus(status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, claims)
+}
+
+// GET /api/master/claim/:id
+func GetClaimInfoByID(c *gin.Context) {
+	claimID := c.Param("id")
+
+	// Get the claim
+	claim, err := db.GetClaimByID(claimID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if claim == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, claim)
+}
+
+// POST /api/master/claim/:id/pending
+func ChangeClaimStatusToPending(c *gin.Context) {
+	claimID := c.Param("id")
+
+	// Get the current claim
+	claim, err := db.GetClaimByID(claimID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if claim == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+		return
+	}
+
+	// Check if claim is in unacknowledged status
+	if claim.Status != models.UnacknowledgedStatus {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Can only change unacknowledged claims to pending"})
+		return
+	}
+
+	// Update claim status to pending
+	updatedClaim, err := db.UpdateClaimStatus(claimID, models.PendingStatus, "")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, updatedClaim)
 }

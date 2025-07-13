@@ -41,7 +41,7 @@ func GetWarrantiesByCarPlate(c *gin.Context) {
 }
 
 // GET /api/user/warranties/valid/:carPlate
-func GetValidWarrantyByCarPlate(c *gin.Context) {
+func HasValidWarrantyByCarPlate(c *gin.Context) {
 	carPlate := c.Param("carPlate")
 
 	warranty, err := db.GetValidWarrantyByCarPlate(carPlate)
@@ -73,4 +73,27 @@ func GetWarrantyReceipt(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"receipt_url": receiptURL})
+}
+
+// GET /api/master/warranties/valid/:carPlate
+func GetValidWarrantiesForTagging(c *gin.Context) {
+	carPlate := c.Param("carPlate")
+
+	warranties, err := db.GetAllValidWarrantiesForCarPlate(carPlate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(warranties) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message":    "No valid warranties found for this car plate",
+			"warranties": []models.Warranty{},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"warranties": warranties,
+	})
 }

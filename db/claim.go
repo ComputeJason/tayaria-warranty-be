@@ -57,9 +57,9 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 
 	row := db.QueryRow(context.Background(), query,
 		claimID,
-		warranty.ID,
+		nil,
 		shopUUID,
-		"pending", // Default status
+		"unacknowledged", // Default status
 		claim.CustomerName,
 		claim.PhoneNumber,
 		claim.Email,
@@ -314,6 +314,71 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	return &claim, nil
 }
 
+// UpdateClaimWarrantyID updates the warranty_id of a claim
+func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		UPDATE claims 
+		SET warranty_id = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		          customer_name, phone_number, email, car_plate, created_at, updated_at
+	`
+
+	log.Printf("Executing SQL query: %s with params: [%s, %s]", query, claimID, warrantyID)
+
+	row := db.QueryRow(context.Background(), query, claimID, warrantyID)
+
+	var claim models.Claim
+	var rejectionReason pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+
+	err := row.Scan(
+		&claim.ID,
+		&claim.WarrantyID,
+		&claim.ShopID,
+		&claim.Status,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&claim.CustomerName,
+		&claim.PhoneNumber,
+		&claim.Email,
+		&claim.CarPlate,
+		&createdAt,
+		&updatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("claim not found")
+		}
+		return nil, fmt.Errorf("failed to update claim warranty: %v", err)
+	}
+
+	// Convert pgtype values to Go types
+	if rejectionReason.Valid {
+		claim.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		claim.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		claim.DateClosed = &dateClosed.Time
+	}
+	if createdAt.Valid {
+		claim.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		claim.UpdatedAt = updatedAt.Time
+	}
+
+	return &claim, nil
+}
+
 // CheckWarrantyExists checks if a warranty exists
 func CheckWarrantyExists(warrantyID string) (bool, error) {
 	if db == nil {
@@ -329,4 +394,103 @@ func CheckWarrantyExists(warrantyID string) (bool, error) {
 	}
 
 	return exists, nil
+}
+
+// GetClaimsByStatus retrieves claims based on status type
+func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	var query string
+	var args []interface{}
+
+	switch statusType {
+	case "unacknowledged":
+		query = `
+			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+				   customer_name, phone_number, email, car_plate, created_at, updated_at
+			FROM claims
+			WHERE status = 'unacknowledged'
+			ORDER BY created_at DESC
+		`
+	case "pending":
+		query = `
+			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+				   customer_name, phone_number, email, car_plate, created_at, updated_at
+			FROM claims
+			WHERE status = 'pending'
+			ORDER BY created_at DESC
+		`
+	case "history":
+		query = `
+			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+				   customer_name, phone_number, email, car_plate, created_at, updated_at
+			FROM claims
+			WHERE status IN ('approved', 'rejected')
+			ORDER BY created_at DESC
+		`
+	default:
+		return nil, fmt.Errorf("invalid status type: %s", statusType)
+	}
+
+	log.Printf("Executing SQL query: %s", query)
+
+	rows, err := db.Query(context.Background(), query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query claims: %v", err)
+	}
+	defer rows.Close()
+
+	claims := []models.Claim{} // Initialize empty slice
+	for rows.Next() {
+		var claim models.Claim
+		var rejectionReason pgtype.Text
+		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+
+		err := rows.Scan(
+			&claim.ID,
+			&claim.WarrantyID,
+			&claim.ShopID,
+			&claim.Status,
+			&rejectionReason,
+			&dateSettled,
+			&dateClosed,
+			&claim.CustomerName,
+			&claim.PhoneNumber,
+			&claim.Email,
+			&claim.CarPlate,
+			&createdAt,
+			&updatedAt,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan claim: %v", err)
+		}
+
+		// Convert pgtype values to Go types
+		if rejectionReason.Valid {
+			claim.RejectionReason = rejectionReason.String
+		}
+		if dateSettled.Valid {
+			claim.DateSettled = &dateSettled.Time
+		}
+		if dateClosed.Valid {
+			claim.DateClosed = &dateClosed.Time
+		}
+		if createdAt.Valid {
+			claim.CreatedAt = createdAt.Time
+		}
+		if updatedAt.Valid {
+			claim.UpdatedAt = updatedAt.Time
+		}
+
+		claims = append(claims, claim)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating claims: %v", err)
+	}
+
+	return claims, nil
 }

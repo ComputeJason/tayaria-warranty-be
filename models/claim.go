@@ -13,7 +13,7 @@ const (
 
 type Claim struct {
 	ID              string      `json:"id"`
-	WarrantyID      string      `json:"warranty_id"`
+	WarrantyID      *string     `json:"warranty_id"`
 	ShopID          string      `json:"shop_id"`
 	Status          ClaimStatus `json:"status"`
 	RejectionReason string      `json:"rejectionReason"`

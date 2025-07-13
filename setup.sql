@@ -87,11 +87,26 @@ INSERT INTO warranties (name, phone_number, email, purchase_date, expiry_date, c
     ('07ob Johnson', '+60123456791', NULL, '2024-03-10', '2024-09-10', 'DEF9012', 'https://example.com/receipt3.pdf');
 
 -- Insert test claims
-INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, status) VALUES
-((SELECT id FROM shops WHERE username = 'testshop1'), 'John Doe', '+60123456789', 'john@example.com', 'ABC123', 'unacknowledged'),
-((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'DEF456', 'approved'),
-((SELECT id FROM shops WHERE username = 'testshop2'), 'Bob Wilson', '+60123456791', 'bob@example.com', 'GHI789', 'rejected'),
-((SELECT id FROM shops WHERE username = 'testshop3'), 'Alice Brown', '+60123456792', 'alice@example.com', 'JKL012', 'closed');
+INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, status, warranty_id) VALUES
+-- Unacknowledged claims
+((SELECT id FROM shops WHERE username = 'testshop1'), 'John Doe', '+60123456789', 'john@example.com', 'ABC1234', 'unacknowledged', NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Sarah Lee', '+60123456701', 'sarah@example.com', 'DEF789', 'unacknowledged', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Mike Chen', '+60123456702', 'mike@example.com', 'GHI101', 'unacknowledged', NULL),
+
+-- Pending claims
+((SELECT id FROM shops WHERE username = 'testshop1'), 'Jane Smith', '+60123456790', 'jane@example.com', 'XYZ5678', 'pending', (SELECT id FROM warranties WHERE car_plate = 'XYZ5678')),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Tom Brown', '+60123456703', 'tom@example.com', 'JKL202', 'pending', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Lisa Wong', '+60123456704', 'lisa@example.com', 'MNO303', 'pending', NULL),
+
+-- Approved claims
+((SELECT id FROM shops WHERE username = 'testshop1'), 'Bob Johnson', '+60123456791', 'bob@example.com', 'DEF9012', 'approved', (SELECT id FROM warranties WHERE car_plate = 'DEF9012')),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Emma Davis', '+60123456705', 'emma@example.com', 'PQR404', 'approved', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Alex Tan', '+60123456706', 'alex@example.com', 'STU505', 'approved', NULL),
+
+-- Rejected claims
+((SELECT id FROM shops WHERE username = 'testshop1'), 'David Wilson', '+60123456707', 'david@example.com', 'VWX606', 'rejected', NULL),
+((SELECT id FROM shops WHERE username = 'testshop2'), 'Grace Lee', '+60123456708', 'grace@example.com', 'YZA707', 'rejected', NULL),
+((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'BCD808', 'rejected', NULL);
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_warranties_car_plate ON warranties(car_plate);
