@@ -3,32 +3,18 @@ package db
 import (
 	"context"
 	"log"
+	"tayaria-warranty-be/models"
+
+	"github.com/jackc/pgx/v5"
 )
 
-type AdminDB struct {
-	ID       string
-	Username string
-	Password string
-	Role     string
-	ShopID   string
-	ShopName string
-}
-
-type SuperUserDB struct {
-	ID       string
-	Username string
-	Password string
-	Role     string
-}
-
-func GetAdminByUsername(username string) (*AdminDB, error) {
+func GetShopByUsername(username string) (*models.Shop, error) {
 	ctx := context.Background()
 
 	query := `
-		SELECT a.id, a.username, a.password, a.role, a.shop_id, s.shop_name
-		FROM admins a
-		LEFT JOIN shops s ON a.shop_id = s.id
-		WHERE a.username = $1
+		SELECT id, shop_name, address, contact, username, password, role, created_at, updated_at
+		FROM shops
+		WHERE username = $1
 	`
 
 	conn, err := db.Acquire(ctx)
@@ -37,30 +23,36 @@ func GetAdminByUsername(username string) (*AdminDB, error) {
 	}
 	defer conn.Release()
 
-	var admin AdminDB
+	var shop models.Shop
 	err = conn.Conn().QueryRow(ctx, query, username).Scan(
-		&admin.ID,
-		&admin.Username,
-		&admin.Password,
-		&admin.Role,
-		&admin.ShopID,
-		&admin.ShopName,
+		&shop.ID,
+		&shop.ShopName,
+		&shop.Address,
+		&shop.Contact,
+		&shop.Username,
+		&shop.Password,
+		&shop.Role,
+		&shop.CreatedAt,
+		&shop.UpdatedAt,
 	)
 	if err != nil {
-		log.Printf("Error querying admin: %v", err)
+		if err == pgx.ErrNoRows {
+			return nil, nil // Return nil for not found instead of error
+		}
+		log.Printf("Error querying shop: %v", err)
 		return nil, err
 	}
 
-	return &admin, nil
+	return &shop, nil
 }
 
-func GetSuperUserByUsername(username string) (*SuperUserDB, error) {
+func CreateShop(req *models.CreateRetailAccountRequest) (*models.Shop, error) {
 	ctx := context.Background()
 
 	query := `
-		SELECT a.id, a.username, a.password, a.role
-		FROM admins a
-		WHERE a.username = $1
+		INSERT INTO shops (shop_name, address, contact, username, password, role)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, shop_name, address, contact, username, password, role, created_at, updated_at
 	`
 
 	conn, err := db.Acquire(ctx)
@@ -69,17 +61,76 @@ func GetSuperUserByUsername(username string) (*SuperUserDB, error) {
 	}
 	defer conn.Release()
 
-	var superuser SuperUserDB
-	err = conn.Conn().QueryRow(ctx, query, username).Scan(
-		&superuser.ID,
-		&superuser.Username,
-		&superuser.Password,
-		&superuser.Role,
+	var shop models.Shop
+	err = conn.Conn().QueryRow(ctx, query,
+		req.ShopName,
+		req.Address,
+		req.Contact,
+		req.Username,
+		req.Password,
+		models.AdminRole, // Default role for retail accounts
+	).Scan(
+		&shop.ID,
+		&shop.ShopName,
+		&shop.Address,
+		&shop.Contact,
+		&shop.Username,
+		&shop.Password,
+		&shop.Role,
+		&shop.CreatedAt,
+		&shop.UpdatedAt,
 	)
 	if err != nil {
-		log.Printf("Error querying admin: %v", err)
+		log.Printf("Error creating shop: %v", err)
 		return nil, err
 	}
 
-	return &superuser, nil
+	return &shop, nil
+}
+
+func GetAllShops() ([]models.Shop, error) {
+	ctx := context.Background()
+
+	query := `
+		SELECT id, shop_name, address, contact, username, password, role, created_at, updated_at
+		FROM shops
+		WHERE role = $1
+		ORDER BY created_at DESC
+	`
+
+	conn, err := db.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Release()
+
+	rows, err := conn.Conn().Query(ctx, query, models.AdminRole)
+	if err != nil {
+		log.Printf("Error querying shops: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var shops []models.Shop
+	for rows.Next() {
+		var shop models.Shop
+		err = rows.Scan(
+			&shop.ID,
+			&shop.ShopName,
+			&shop.Address,
+			&shop.Contact,
+			&shop.Username,
+			&shop.Password,
+			&shop.Role,
+			&shop.CreatedAt,
+			&shop.UpdatedAt,
+		)
+		if err != nil {
+			log.Printf("Error scanning shop: %v", err)
+			continue
+		}
+		shops = append(shops, shop)
+	}
+
+	return shops, nil
 }

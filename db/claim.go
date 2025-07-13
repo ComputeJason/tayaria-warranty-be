@@ -18,34 +18,55 @@ func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	// First, validate that the car plate has a valid warranty
+	warranty, err := GetValidWarrantyByCarPlate(claim.CarPlate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check warranty: %v", err)
+	}
+	if warranty == nil {
+		return nil, fmt.Errorf("no valid warranty found for car plate %s", claim.CarPlate)
+	}
+
 	// Generate UUID for claim ID
 	claimID := uuid.New().String()
 
 	query := `
-		INSERT INTO claims (id, warranty_id, description, status)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, warranty_id, description, status, admin_comment, created_at, updated_at
+		INSERT INTO claims (id, warranty_id, shop_id, status, customer_name, phone_number, email, car_plate)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed, 
+		          customer_name, phone_number, email, car_plate, created_at, updated_at
 	`
 
-	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s]",
-		query, claimID, claim.WarrantyID, claim.Description, "pending")
+	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s]",
+		query, claimID, warranty.ID, claim.ShopID, "pending", claim.CustomerName, claim.PhoneNumber, claim.Email, claim.CarPlate)
 
 	row := db.QueryRow(context.Background(), query,
 		claimID,
-		claim.WarrantyID,
-		claim.Description,
+		warranty.ID,
+		claim.ShopID,
 		"pending", // Default status
+		claim.CustomerName,
+		claim.PhoneNumber,
+		claim.Email,
+		claim.CarPlate,
 	)
 
 	var result models.Claim
-	var createdAt, updatedAt pgtype.Timestamp
+	var rejectionReason pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
-	err := row.Scan(
+	err = row.Scan(
 		&result.ID,
 		&result.WarrantyID,
-		&result.Description,
+		&result.ShopID,
 		&result.Status,
-		&result.AdminComment,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&result.CustomerName,
+		&result.PhoneNumber,
+		&result.Email,
+		&result.CarPlate,
 		&createdAt,
 		&updatedAt,
 	)
@@ -54,7 +75,16 @@ func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
 		return nil, fmt.Errorf("failed to create claim: %v", err)
 	}
 
-	// Convert pgtype.Timestamp to time.Time
+	// Convert pgtype values to Go types
+	if rejectionReason.Valid {
+		result.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		result.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		result.DateClosed = &dateClosed.Time
+	}
 	if createdAt.Valid {
 		result.CreatedAt = createdAt.Time
 	}
@@ -65,39 +95,23 @@ func CreateClaim(claim models.CreateClaimRequest) (*models.Claim, error) {
 	return &result, nil
 }
 
-// GetClaims retrieves claims with optional filtering
-func GetClaims(warrantyID string, status string) ([]models.Claim, error) {
+// GetShopClaims retrieves claims for a specific shop
+func GetShopClaims(shopID string) ([]models.Claim, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	var query string
-	var args []interface{}
-	argCount := 0
-
-	query = `
-		SELECT id, warranty_id, description, status, admin_comment, created_at, updated_at
+	query := `
+		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		       customer_name, phone_number, email, car_plate, created_at, updated_at
 		FROM claims
-		WHERE 1=1
+		WHERE shop_id = $1
+		ORDER BY created_at DESC
 	`
 
-	if warrantyID != "" {
-		argCount++
-		query += fmt.Sprintf(" AND warranty_id = $%d", argCount)
-		args = append(args, warrantyID)
-	}
+	log.Printf("Executing SQL query: %s with params: [%s]", query, shopID)
 
-	if status != "" {
-		argCount++
-		query += fmt.Sprintf(" AND status = $%d", argCount)
-		args = append(args, status)
-	}
-
-	query += " ORDER BY created_at DESC"
-
-	log.Printf("Executing SQL query: %s with params: %v", query, args)
-
-	rows, err := db.Query(context.Background(), query, args...)
+	rows, err := db.Query(context.Background(), query, shopID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query claims: %v", err)
 	}
@@ -106,14 +120,21 @@ func GetClaims(warrantyID string, status string) ([]models.Claim, error) {
 	var claims []models.Claim
 	for rows.Next() {
 		var claim models.Claim
-		var createdAt, updatedAt pgtype.Timestamp
+		var rejectionReason pgtype.Text
+		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 		err := rows.Scan(
 			&claim.ID,
 			&claim.WarrantyID,
-			&claim.Description,
+			&claim.ShopID,
 			&claim.Status,
-			&claim.AdminComment,
+			&rejectionReason,
+			&dateSettled,
+			&dateClosed,
+			&claim.CustomerName,
+			&claim.PhoneNumber,
+			&claim.Email,
+			&claim.CarPlate,
 			&createdAt,
 			&updatedAt,
 		)
@@ -122,7 +143,16 @@ func GetClaims(warrantyID string, status string) ([]models.Claim, error) {
 			return nil, fmt.Errorf("failed to scan claim: %v", err)
 		}
 
-		// Convert pgtype.Timestamp to time.Time
+		// Convert pgtype values to Go types
+		if rejectionReason.Valid {
+			claim.RejectionReason = rejectionReason.String
+		}
+		if dateSettled.Valid {
+			claim.DateSettled = &dateSettled.Time
+		}
+		if dateClosed.Valid {
+			claim.DateClosed = &dateClosed.Time
+		}
 		if createdAt.Valid {
 			claim.CreatedAt = createdAt.Time
 		}
@@ -147,7 +177,8 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	}
 
 	query := `
-		SELECT id, warranty_id, description, status, admin_comment, created_at, updated_at
+		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		       customer_name, phone_number, email, car_plate, created_at, updated_at
 		FROM claims
 		WHERE id = $1
 	`
@@ -157,14 +188,21 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	row := db.QueryRow(context.Background(), query, claimID)
 
 	var claim models.Claim
-	var createdAt, updatedAt pgtype.Timestamp
+	var rejectionReason pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 	err := row.Scan(
 		&claim.ID,
 		&claim.WarrantyID,
-		&claim.Description,
+		&claim.ShopID,
 		&claim.Status,
-		&claim.AdminComment,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&claim.CustomerName,
+		&claim.PhoneNumber,
+		&claim.Email,
+		&claim.CarPlate,
 		&createdAt,
 		&updatedAt,
 	)
@@ -176,7 +214,16 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 		return nil, fmt.Errorf("failed to get claim: %v", err)
 	}
 
-	// Convert pgtype.Timestamp to time.Time
+	// Convert pgtype values to Go types
+	if rejectionReason.Valid {
+		claim.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		claim.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		claim.DateClosed = &dateClosed.Time
+	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time
 	}
@@ -188,31 +235,39 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 }
 
 // UpdateClaimStatus updates the status of a claim
-func UpdateClaimStatus(claimID string, status models.ClaimStatus, adminComment string) (*models.Claim, error) {
+func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReason string) (*models.Claim, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
 	query := `
 		UPDATE claims 
-		SET status = $2, admin_comment = $3, updated_at = CURRENT_TIMESTAMP
+		SET status = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-		RETURNING id, warranty_id, description, status, admin_comment, created_at, updated_at
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		          customer_name, phone_number, email, car_plate, created_at, updated_at
 	`
 
-	log.Printf("Executing SQL query: %s with params: [%s, %s, %s]", query, claimID, status, adminComment)
+	log.Printf("Executing SQL query: %s with params: [%s, %s, %s]", query, claimID, status, rejectionReason)
 
-	row := db.QueryRow(context.Background(), query, claimID, status, adminComment)
+	row := db.QueryRow(context.Background(), query, claimID, status, rejectionReason)
 
 	var claim models.Claim
-	var createdAt, updatedAt pgtype.Timestamp
+	var rejectionReasonDB pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 	err := row.Scan(
 		&claim.ID,
 		&claim.WarrantyID,
-		&claim.Description,
+		&claim.ShopID,
 		&claim.Status,
-		&claim.AdminComment,
+		&rejectionReasonDB,
+		&dateSettled,
+		&dateClosed,
+		&claim.CustomerName,
+		&claim.PhoneNumber,
+		&claim.Email,
+		&claim.CarPlate,
 		&createdAt,
 		&updatedAt,
 	)
@@ -224,7 +279,16 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, adminComment s
 		return nil, fmt.Errorf("failed to update claim status: %v", err)
 	}
 
-	// Convert pgtype.Timestamp to time.Time
+	// Convert pgtype values to Go types
+	if rejectionReasonDB.Valid {
+		claim.RejectionReason = rejectionReasonDB.String
+	}
+	if dateSettled.Valid {
+		claim.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		claim.DateClosed = &dateClosed.Time
+	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time
 	}

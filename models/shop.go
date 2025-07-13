@@ -1,32 +1,54 @@
 package models
 
+import "time"
+
+type UserRole string
+
+const (
+	AdminRole     UserRole = "admin"
+	SuperUserRole UserRole = "super_user"
+)
+
 type Shop struct {
-	ID           string `json:"id"`
-	ShopName     string `json:"shop_name"`
-	Address      string `json:"address"`
-	Contact      string `json:"contact"`
-	Username     string `json:"username"`
-	PasswordHash string `json:"password_hash"`
+	ID        string    `json:"id" db:"id"`
+	ShopName  string    `json:"shop_name" db:"shop_name"`
+	Address   string    `json:"address" db:"address"`
+	Contact   string    `json:"contact" db:"contact"`
+	Username  string    `json:"username" db:"username"`
+	Password  string    `json:"password" db:"password"`
+	Role      UserRole  `json:"role" db:"role"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
-type CreateShopRequest struct {
-	ShopName     string `json:"shop_name" binding:"required"`
-	Address      string `json:"address" binding:"required"`
-	Contact      string `json:"contact" binding:"required"`
-	Username     string `json:"username" binding:"required"`
-	PasswordHash string `json:"password_hash" binding:"required"`
+type CreateRetailAccountRequest struct {
+	ShopName string `json:"shop_name" binding:"required"`
+	Address  string `json:"address" binding:"required"`
+	Contact  string `json:"contact"`
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }
 
-type UpdateShopRequest struct {
-	ShopName     string `json:"shop_name,omitempty"`
-	Address      string `json:"address,omitempty"`
-	Contact      string `json:"contact,omitempty"`
-	Username     string `json:"username,omitempty"`
-	PasswordHash string `json:"password_hash,omitempty"`
+type CreateRetailAccountResponse struct {
+	ID        string    `json:"id"`
+	ShopName  string    `json:"shop_name"`
+	Address   string    `json:"address"`
+	Contact   string    `json:"contact"`
+	Username  string    `json:"username"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// ShopWithAdmin combines shop information with its admin details
-type ShopWithAdmin struct {
-	Shop  Shop  `json:"shop"`
-	Admin Admin `json:"admin"`
+type ShopLoginRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
 }
+
+type ShopLoginResponse struct {
+	Token string `json:"token"`
+	Shop  Shop   `json:"shop"`
+}
+
+// TODO: Add middleware authentication for master routes
+// TODO: Implement JWT token generation and validation
+// TODO: Add proper session management

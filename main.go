@@ -69,10 +69,11 @@ func main() {
 		userRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantyByCarPlate)
 		userRoutes.GET("/warranty/receipt/:id", handlers.GetWarrantyReceipt)
 		userRoutes.POST("/claim", handlers.CreateClaim)
-		userRoutes.GET("/claims", handlers.GetClaims)
-		userRoutes.POST("/claim/tag-warranty", handlers.TagWarrantyToClaim)
-		userRoutes.POST("/claim/change-status", handlers.ChangeClaimStatus)
-		userRoutes.POST("/claim/close", handlers.CloseClaim)
+		userRoutes.GET("/claims/:shop_id", handlers.GetShopClaims)
+		userRoutes.GET("/claims", handlers.GetClaims) // Legacy endpoint
+		userRoutes.POST("/claim/:id/tag-warranty", handlers.TagWarrantyToClaim)
+		userRoutes.POST("/claim/:id/change-status", handlers.ChangeClaimStatus)
+		userRoutes.POST("/claim/:id/close", handlers.CloseClaim)
 	}
 
 	// Admin routes
@@ -80,6 +81,12 @@ func main() {
 	adminRoutes.Use(middleware.AdminMiddleware())
 	{
 		// TODO: Add admin-protected routes here as they are implemented
+	}
+
+	masterRoutes := r.Group("/api/master")
+	{
+		masterRoutes.POST("/account", handlers.CreateRetailAccount)
+		masterRoutes.GET("/account", handlers.GetRetailAccounts)
 	}
 
 	// Get port from environment variable or default to 8080
