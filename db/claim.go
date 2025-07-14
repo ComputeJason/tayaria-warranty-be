@@ -321,23 +321,31 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	query := `
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback(context.Background())
+		}
+	}()
+
+	// 1. Update the claim's warranty_id
+	claimUpdateQuery := `
 		UPDATE claims 
 		SET warranty_id = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
 		          customer_name, phone_number, email, car_plate, created_at, updated_at
 	`
-
-	log.Printf("Executing SQL query: %s with params: [%s, %s]", query, claimID, warrantyID)
-
-	row := db.QueryRow(context.Background(), query, claimID, warrantyID)
+	row := tx.QueryRow(context.Background(), claimUpdateQuery, claimID, warrantyID)
 
 	var claim models.Claim
 	var rejectionReason pgtype.Text
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
-	err := row.Scan(
+	err = row.Scan(
 		&claim.ID,
 		&claim.WarrantyID,
 		&claim.ShopID,
@@ -352,12 +360,26 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 		&createdAt,
 		&updatedAt,
 	)
-
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			tx.Rollback(context.Background())
 			return nil, fmt.Errorf("claim not found")
 		}
+		tx.Rollback(context.Background())
 		return nil, fmt.Errorf("failed to update claim warranty: %v", err)
+	}
+
+	// 2. Update the warranty's is_used to true
+	warrantyUpdateQuery := `UPDATE warranties SET is_used = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = $1`
+	_, err = tx.Exec(context.Background(), warrantyUpdateQuery, warrantyID)
+	if err != nil {
+		tx.Rollback(context.Background())
+		return nil, fmt.Errorf("failed to update warranty is_used: %v", err)
+	}
+
+	err = tx.Commit(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
 	// Convert pgtype values to Go types

@@ -59,7 +59,7 @@ func main() {
 	userRoutes := r.Group("/api/user")
 	{
 		userRoutes.POST("/warranty", handlers.RegisterWarranty)
-		userRoutes.GET("/warranties/car-plate/:carPlate", handlers.GetWarrantiesByCarPlate)
+		userRoutes.GET("/warranties/car-plate/:carPlate", handlers.GetWarrantiesByCarPlate) // this is for User Warranty Check
 		userRoutes.GET("/warranties/valid/:carPlate", handlers.HasValidWarrantyByCarPlate)
 		userRoutes.GET("/warranty/receipt/:id", handlers.GetWarrantyReceipt)
 	}
