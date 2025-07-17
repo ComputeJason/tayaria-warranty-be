@@ -118,11 +118,13 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	}
 
 	query := `
-		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-		       customer_name, phone_number, email, car_plate, created_at, updated_at
-		FROM claims
-		WHERE shop_id = $1
-		ORDER BY created_at DESC
+		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
+		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
+		       c.created_at, c.updated_at
+		FROM claims c
+		LEFT JOIN shops s ON c.shop_id = s.id
+		WHERE c.shop_id = $1
+		ORDER BY c.created_at DESC
 	`
 
 	log.Printf("Executing SQL query: %s with params: [%s]", query, shopID)
@@ -138,11 +140,14 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		var claim models.Claim
 		var rejectionReason pgtype.Text
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+		var shopName, contact pgtype.Text
 
 		err := rows.Scan(
 			&claim.ID,
 			&claim.WarrantyID,
 			&claim.ShopID,
+			&shopName,
+			&contact,
 			&claim.Status,
 			&rejectionReason,
 			&dateSettled,
@@ -160,6 +165,12 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		}
 
 		// Convert pgtype values to Go types
+		if shopName.Valid {
+			claim.ShopName = shopName.String
+		}
+		if contact.Valid {
+			claim.Contact = contact.String
+		}
 		if rejectionReason.Valid {
 			claim.RejectionReason = rejectionReason.String
 		}
@@ -193,10 +204,12 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	}
 
 	query := `
-		SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-		       customer_name, phone_number, email, car_plate, created_at, updated_at
-		FROM claims
-		WHERE id = $1
+		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
+		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
+		       c.created_at, c.updated_at
+		FROM claims c
+		LEFT JOIN shops s ON c.shop_id = s.id
+		WHERE c.id = $1
 	`
 
 	log.Printf("Executing SQL query: %s with params: [%s]", query, claimID)
@@ -206,11 +219,14 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	var claim models.Claim
 	var rejectionReason pgtype.Text
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+	var shopName, contact pgtype.Text
 
 	err := row.Scan(
 		&claim.ID,
 		&claim.WarrantyID,
 		&claim.ShopID,
+		&shopName,
+		&contact,
 		&claim.Status,
 		&rejectionReason,
 		&dateSettled,
@@ -230,7 +246,16 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 		return nil, fmt.Errorf("failed to get claim: %v", err)
 	}
 
+	// Check if shop exists (should not be null for valid claims)
+	if !shopName.Valid {
+		return nil, fmt.Errorf("shop not found for claim %s", claimID)
+	}
+
 	// Convert pgtype values to Go types
+	claim.ShopName = shopName.String
+	if contact.Valid {
+		claim.Contact = contact.String
+	}
 	if rejectionReason.Valid {
 		claim.RejectionReason = rejectionReason.String
 	}
@@ -312,6 +337,21 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 		claim.UpdatedAt = updatedAt.Time
 	}
 
+	// Get shop information
+	shopQuery := `SELECT shop_name, contact FROM shops WHERE id = $1`
+	var shopName, contact pgtype.Text
+	err = db.QueryRow(context.Background(), shopQuery, claim.ShopID).Scan(&shopName, &contact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get shop information: %v", err)
+	}
+
+	if shopName.Valid {
+		claim.ShopName = shopName.String
+	}
+	if contact.Valid {
+		claim.Contact = contact.String
+	}
+
 	return &claim, nil
 }
 
@@ -369,14 +409,6 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 		return nil, fmt.Errorf("failed to update claim warranty: %v", err)
 	}
 
-	// 2. Update the warranty's is_used to true
-	warrantyUpdateQuery := `UPDATE warranties SET is_used = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = $1`
-	_, err = tx.Exec(context.Background(), warrantyUpdateQuery, warrantyID)
-	if err != nil {
-		tx.Rollback(context.Background())
-		return nil, fmt.Errorf("failed to update warranty is_used: %v", err)
-	}
-
 	err = tx.Commit(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %v", err)
@@ -397,6 +429,21 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 	}
 	if updatedAt.Valid {
 		claim.UpdatedAt = updatedAt.Time
+	}
+
+	// Get shop information
+	shopQuery := `SELECT shop_name, contact FROM shops WHERE id = $1`
+	var shopName, contact pgtype.Text
+	err = db.QueryRow(context.Background(), shopQuery, claim.ShopID).Scan(&shopName, &contact)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get shop information: %v", err)
+	}
+
+	if shopName.Valid {
+		claim.ShopName = shopName.String
+	}
+	if contact.Valid {
+		claim.Contact = contact.String
 	}
 
 	return &claim, nil
@@ -431,27 +478,33 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 	switch statusType {
 	case "unacknowledged":
 		query = `
-			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-				   customer_name, phone_number, email, car_plate, created_at, updated_at
-			FROM claims
-			WHERE status = 'unacknowledged'
-			ORDER BY created_at DESC
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
+			       c.created_at, c.updated_at
+			FROM claims c
+			LEFT JOIN shops s ON c.shop_id = s.id
+			WHERE c.status = 'unacknowledged'
+			ORDER BY c.created_at DESC
 		`
 	case "pending":
 		query = `
-			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-				   customer_name, phone_number, email, car_plate, created_at, updated_at
-			FROM claims
-			WHERE status = 'pending'
-			ORDER BY created_at DESC
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
+			       c.created_at, c.updated_at
+			FROM claims c
+			LEFT JOIN shops s ON c.shop_id = s.id
+			WHERE c.status = 'pending'
+			ORDER BY c.created_at DESC
 		`
 	case "history":
 		query = `
-			SELECT id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-				   customer_name, phone_number, email, car_plate, created_at, updated_at
-			FROM claims
-			WHERE status IN ('approved', 'rejected')
-			ORDER BY created_at DESC
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
+			       c.created_at, c.updated_at
+			FROM claims c
+			LEFT JOIN shops s ON c.shop_id = s.id
+			WHERE c.status IN ('approved', 'rejected')
+			ORDER BY c.created_at DESC
 		`
 	default:
 		return nil, fmt.Errorf("invalid status type: %s", statusType)
@@ -470,11 +523,14 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 		var claim models.Claim
 		var rejectionReason pgtype.Text
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+		var shopName, contact pgtype.Text
 
 		err := rows.Scan(
 			&claim.ID,
 			&claim.WarrantyID,
 			&claim.ShopID,
+			&shopName,
+			&contact,
 			&claim.Status,
 			&rejectionReason,
 			&dateSettled,
@@ -491,7 +547,16 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 			return nil, fmt.Errorf("failed to scan claim: %v", err)
 		}
 
+		// Check if shop exists (should not be null for valid claims)
+		if !shopName.Valid {
+			return nil, fmt.Errorf("shop not found for claim %s", claim.ID)
+		}
+
 		// Convert pgtype values to Go types
+		claim.ShopName = shopName.String
+		if contact.Valid {
+			claim.Contact = contact.String
+		}
 		if rejectionReason.Valid {
 			claim.RejectionReason = rejectionReason.String
 		}
@@ -524,14 +589,14 @@ func AcceptClaim(claimID string, tyreDetails []models.TyreDetail) (*models.Claim
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	// Start a transaction
+	// Start transaction
 	tx, err := db.Begin(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to start transaction: %v", err)
+		return nil, fmt.Errorf("failed to begin transaction: %v", err)
 	}
 	defer tx.Rollback(context.Background())
 
-	// First update claim status to approved
+	// Update claim status to approved
 	updateClaimQuery := `
 		UPDATE claims 
 		SET status = $2, 
@@ -551,11 +616,10 @@ func AcceptClaim(claimID string, tyreDetails []models.TyreDetail) (*models.Claim
 
 	// Insert tyre details
 	insertTyreQuery := `
-		INSERT INTO tyre_details (claim_id, brand, size, cost)
+		INSERT INTO tyre_details (claim_id, brand, size, tread_pattern)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at`
 
-	var totalCost float64
 	for i := range tyreDetails {
 		var tyreID string
 		var createdAt time.Time
@@ -563,7 +627,7 @@ func AcceptClaim(claimID string, tyreDetails []models.TyreDetail) (*models.Claim
 			claimID,
 			tyreDetails[i].Brand,
 			tyreDetails[i].Size,
-			tyreDetails[i].Cost,
+			tyreDetails[i].TreadPattern,
 		).Scan(&tyreID, &createdAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert tyre detail: %v", err)
@@ -571,18 +635,6 @@ func AcceptClaim(claimID string, tyreDetails []models.TyreDetail) (*models.Claim
 		tyreDetails[i].ID = tyreID
 		tyreDetails[i].ClaimID = claimID
 		tyreDetails[i].CreatedAt = createdAt
-		totalCost += tyreDetails[i].Cost
-	}
-
-	// Update total cost
-	updateCostQuery := `
-		UPDATE claims 
-		SET total_cost = $2
-		WHERE id = $1`
-
-	_, err = tx.Exec(context.Background(), updateCostQuery, claimID, totalCost)
-	if err != nil {
-		return nil, fmt.Errorf("failed to update total cost: %v", err)
 	}
 
 	// Commit transaction
@@ -611,7 +663,7 @@ func GetClaimWithTyreDetails(claimID string) (*models.Claim, error) {
 
 	// Get tyre details
 	query := `
-		SELECT id, claim_id, brand, size, cost, created_at
+		SELECT id, claim_id, brand, size, tread_pattern, created_at
 		FROM tyre_details
 		WHERE claim_id = $1
 		ORDER BY created_at ASC`
@@ -630,7 +682,7 @@ func GetClaimWithTyreDetails(claimID string) (*models.Claim, error) {
 			&td.ClaimID,
 			&td.Brand,
 			&td.Size,
-			&td.Cost,
+			&td.TreadPattern,
 			&td.CreatedAt,
 		)
 		if err != nil {
@@ -657,7 +709,7 @@ func RejectClaim(claimID string, reason string) (*models.Claim, error) {
 		    date_settled = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status = 'pending'
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
-		          date_settled, date_closed, total_cost,
+		          date_settled, date_closed,
 		          customer_name, phone_number, email, car_plate,
 		          created_at, updated_at`
 
@@ -673,7 +725,6 @@ func RejectClaim(claimID string, reason string) (*models.Claim, error) {
 		&rejectionReason,
 		&dateSettled,
 		&dateClosed,
-		&claim.TotalCost,
 		&claim.CustomerName,
 		&claim.PhoneNumber,
 		&claim.Email,
@@ -717,7 +768,7 @@ func CloseClaim(claimID string) (*models.Claim, error) {
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status IN ('approved', 'rejected')
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
-		          date_settled, date_closed, total_cost,
+		          date_settled, date_closed,
 		          customer_name, phone_number, email, car_plate,
 		          created_at, updated_at`
 
@@ -735,7 +786,6 @@ func CloseClaim(claimID string) (*models.Claim, error) {
 		&rejectionReason,
 		&dateSettled,
 		&dateClosed,
-		&claim.TotalCost,
 		&claim.CustomerName,
 		&claim.PhoneNumber,
 		&claim.Email,

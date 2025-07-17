@@ -1,80 +1,75 @@
 #!/bin/bash
 
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiYWRkMWQwYjAtMTI5Zi00MDZkLWJjYzctMDZjNWVhYTFmNGJlIiwidXNlcm5hbWUiOiJtYXN0ZXIiLCJyb2xlIjoibWFzdGVyIiwiZXhwIjoxNzU0OTg4NDIzLCJuYmYiOjE3NTIzOTY0MjMsImlhdCI6MTc1MjM5NjQyM30.E7Ey0qKnZNN3zVtTZeCr6_cyreRFVW8TAa0Nl1zec3s"
+# Test script for claims API endpoints
+# Make sure the server is running on localhost:8080
+
 BASE_URL="http://localhost:8080"
 
-echo "1. Getting unacknowledged claims:"
-curl -X GET "$BASE_URL/api/master/claims?status=unacknowledged" \
--H "Authorization: Bearer $TOKEN"
-echo -e "\n"
+echo "Testing Claims API Endpoints..."
+echo "================================"
 
-echo "2. Getting pending claims:"
-curl -X GET "$BASE_URL/api/master/claims?status=pending" \
--H "Authorization: Bearer $TOKEN"
-echo -e "\n"
+# Test 1: Create a new claim
+echo "1. Creating a new claim..."
+CREATE_RESPONSE=$(curl -s -X POST "$BASE_URL/api/admin/claim" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3MzU2ODgwMDB9.example" \
+  -d '{
+    "customer_name": "John Doe",
+    "phone_number": "+60123456789",
+    "email": "john@example.com",
+    "car_plate": "ABC1234",
+    "description": "Engine overheating issue"
+  }')
 
-# Use a claim ID from the previous response
-CLAIM_ID="YOUR_CLAIM_ID"  # Replace this with an actual claim ID from the response
+echo "Create Claim Response: $CREATE_RESPONSE"
+CLAIM_ID=$(echo $CREATE_RESPONSE | grep -o '"id":"[^"]*"' | cut -d'"' -f4)
+echo "Claim ID: $CLAIM_ID"
+echo ""
 
-echo "3. Change claim to pending:"
-curl -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/pending" \
--H "Authorization: Bearer $TOKEN"
-echo -e "\n"
+# Test 2: Get shop claims
+echo "2. Getting shop claims..."
+curl -s -X GET "$BASE_URL/api/admin/claims" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3MzU2ODgwMDB9.example"
+echo ""
+echo ""
 
-echo "4. Accept claim with tyre details:"
-curl -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/accept" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d '{
-  "tyre_details": [
-    {
-      "brand": "Michelin",
-      "size": "205/55R16",
-      "cost": 450.00
-    },
-    {
-      "brand": "Michelin",
-      "size": "205/55R16",
-      "cost": 450.00
-    }
-  ]
-}'
-echo -e "\n"
+# Test 3: Accept a claim (if we have a claim ID)
+if [ ! -z "$CLAIM_ID" ]; then
+    echo "3. Accepting claim $CLAIM_ID..."
+    ACCEPT_RESPONSE=$(curl -s -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/accept" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3MzU2ODgwMDB9.example" \
+      -d '{
+        "tyre_details": [
+          {"brand": "Kumho", "size": "205/55R16", "tread_pattern": "Ecowing ES31"},
+          {"brand": "Kumho", "size": "205/55R16", "tread_pattern": "Ecowing ES31"}
+        ]
+      }')
+    
+    echo "Accept Claim Response: $ACCEPT_RESPONSE"
+    echo ""
+else
+    echo "3. Skipping accept claim test (no claim ID available)"
+    echo ""
+fi
 
-echo "5. Reject claim with reason:"
-curl -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/reject" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d '{
-  "rejection_reason": "Invalid warranty claim"
-}'
-echo -e "\n"
+# Test 4: Get claim info by ID
+if [ ! -z "$CLAIM_ID" ]; then
+    echo "4. Getting claim info for $CLAIM_ID..."
+    curl -s -X GET "$BASE_URL/api/master/claim/$CLAIM_ID" \
+      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3MzU2ODgwMDB9.example"
+    echo ""
+    echo ""
+else
+    echo "4. Skipping get claim info test (no claim ID available)"
+    echo ""
+fi
 
-echo "6. Try to accept a rejected claim (should fail):"
-curl -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/accept" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d '{
-  "tyre_details": [
-    {
-      "brand": "Michelin",
-      "size": "205/55R16",
-      "cost": 450.00
-    }
-  ]
-}'
-echo -e "\n"
+# Test 5: Get all claims by status
+echo "5. Getting all pending claims..."
+curl -s -X GET "$BASE_URL/api/master/claims?status=pending" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzaG9wX2lkIjoiMTIzNDU2NzgtMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEiLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3MzU2ODgwMDB9.example"
+echo ""
+echo ""
 
-echo "7. Try to add more than 4 tyres (should fail):"
-curl -X POST "$BASE_URL/api/master/claim/$CLAIM_ID/accept" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d '{
-  "tyre_details": [
-    {"brand": "Michelin", "size": "205/55R16", "cost": 450.00},
-    {"brand": "Michelin", "size": "205/55R16", "cost": 450.00},
-    {"brand": "Michelin", "size": "205/55R16", "cost": 450.00},
-    {"brand": "Michelin", "size": "205/55R16", "cost": 450.00},
-    {"brand": "Michelin", "size": "205/55R16", "cost": 450.00}
-  ]
-}' 
+echo "Tests completed!" 

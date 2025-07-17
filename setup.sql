@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS warranties (
     expiry_date DATE NOT NULL,
     car_plate VARCHAR(20) NOT NULL,
     receipt VARCHAR(500) NOT NULL,
-    is_used BOOLEAN DEFAULT FALSE,
+
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -74,9 +74,6 @@ CREATE OR REPLACE TRIGGER update_claims_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- Add total_cost to claims table
-ALTER TABLE claims ADD COLUMN total_cost DECIMAL(10,2) DEFAULT 0.00;
-
 -- Create function to check max tyres per claim
 CREATE OR REPLACE FUNCTION check_max_tyres_per_claim()
 RETURNS TRIGGER AS $$
@@ -99,7 +96,7 @@ CREATE TABLE IF NOT EXISTS tyre_details (
     claim_id UUID REFERENCES claims(id),
     brand VARCHAR(100) NOT NULL,
     size VARCHAR(50) NOT NULL,
-    cost DECIMAL(10,2) NOT NULL CHECK (cost >= 0),
+    tread_pattern VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_claim
         FOREIGN KEY (claim_id)
@@ -195,34 +192,26 @@ INSERT INTO claims (shop_id, customer_name, phone_number, email, car_plate, stat
 ((SELECT id FROM shops WHERE username = 'testshop3'), 'Ryan Lim', '+60123456709', 'ryan@example.com', 'DEF9012', 'rejected', NULL, CURRENT_TIMESTAMP - INTERVAL '4 days');
 
 -- Add tyre details for approved claims
-INSERT INTO tyre_details (claim_id, brand, size, cost) VALUES
+INSERT INTO tyre_details (claim_id, brand, size, tread_pattern) VALUES
     -- First approved claim (Bob Johnson - DEF9012) gets 2 tyres
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'DEF9012'),
-     'Michelin', '205/55R16', 450.00),
+     'Kumho', '205/55R16', 'Ecowing ES31'),
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'DEF9012'),
-     'Michelin', '205/55R16', 450.00),
+     'Kumho', '205/55R16', 'Ecowing ES31'),
     
     -- Second approved claim (Emma Davis - PQR404) gets 4 tyres
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
-     'Bridgestone', '215/45R17', 550.00),
+     'Kumho', '215/45R17', 'Ecsta PS31'),
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
-     'Bridgestone', '215/45R17', 550.00),
+     'Kumho', '215/45R17', 'Ecsta PS31'),
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
-     'Bridgestone', '215/45R17', 550.00),
+     'Kumho', '215/45R17', 'Ecsta PS31'),
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'PQR404'),
-     'Bridgestone', '215/45R17', 550.00),
+     'Kumho', '215/45R17', 'Ecsta PS31'),
     
     -- Third approved claim (Alex Tan - STU505) gets 1 tyre
     ((SELECT id FROM claims WHERE status = 'approved' AND car_plate = 'STU505'),
-     'Continental', '225/40R18', 650.00);
-
--- Update total_cost for claims with tyre details
-UPDATE claims c 
-SET total_cost = (
-    SELECT COALESCE(SUM(cost), 0) 
-    FROM tyre_details td 
-    WHERE td.claim_id = c.id
-);
+     'Kumho', '225/40R18', 'Ecsta HS52');
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_warranties_car_plate ON warranties(car_plate);

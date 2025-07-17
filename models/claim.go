@@ -12,23 +12,24 @@ const (
 )
 
 type TyreDetail struct {
-	ID        string    `json:"id"`
-	ClaimID   string    `json:"claim_id"`
-	Brand     string    `json:"brand"`
-	Size      string    `json:"size"`
-	Cost      float64   `json:"cost"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           string    `json:"id"`
+	ClaimID      string    `json:"claim_id"`
+	Brand        string    `json:"brand"`
+	Size         string    `json:"size"`
+	TreadPattern string    `json:"tread_pattern"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 type Claim struct {
 	ID              string      `json:"id"`
 	WarrantyID      *string     `json:"warranty_id"`
 	ShopID          string      `json:"shop_id"`
+	ShopName        string      `json:"shop_name"`
+	Contact         string      `json:"contact"`
 	Status          ClaimStatus `json:"status"`
 	RejectionReason string      `json:"rejection_reason"`
 	DateSettled     *time.Time  `json:"date_settled"`
 	DateClosed      *time.Time  `json:"date_closed"`
-	TotalCost       float64     `json:"total_cost"`
 	// Customer info
 	CustomerName string    `json:"customer_name"`
 	PhoneNumber  string    `json:"phone_number"`
@@ -59,9 +60,9 @@ type UpdateClaimStatusRequest struct {
 
 type AcceptClaimRequest struct {
 	TyreDetails []struct {
-		Brand string  `json:"brand" binding:"required"`
-		Size  string  `json:"size" binding:"required"`
-		Cost  float64 `json:"cost" binding:"required,min=0"`
+		Brand        string `json:"brand" binding:"required"`
+		Size         string `json:"size" binding:"required"`
+		TreadPattern string `json:"tread_pattern" binding:"required"`
 	} `json:"tyre_details" binding:"required,min=1,max=4"`
 }
 

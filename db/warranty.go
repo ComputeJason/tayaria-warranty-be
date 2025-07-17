@@ -32,14 +32,14 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 	}
 
 	query := `
-		INSERT INTO warranties (id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, is_used)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		RETURNING id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, is_used, created_at, updated_at
+		INSERT INTO warranties (id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
 	`
 
-	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s, %v]",
+	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s]",
 		query, warrantyID, warranty.Name, warranty.PhoneNumber, warranty.Email,
-		warranty.PurchaseDate.Format("2006-01-02"), expiryDate.Format("2006-01-02"), warranty.CarPlate, receiptURL, false)
+		warranty.PurchaseDate.Format("2006-01-02"), expiryDate.Format("2006-01-02"), warranty.CarPlate, receiptURL)
 
 	row := db.QueryRow(context.Background(), query,
 		warrantyID,
@@ -50,7 +50,6 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 		expiryDate,
 		warranty.CarPlate,
 		receiptURL,
-		false, // is_used defaults to false
 	)
 
 	var result models.Warranty
@@ -65,7 +64,6 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 		&expiryDateDB,
 		&result.CarPlate,
 		&result.Receipt,
-		&result.IsUsed,
 		&createdAt,
 		&updatedAt,
 	)
@@ -98,7 +96,7 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 	}
 
 	query := `
-		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, is_used, created_at, updated_at
+		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
 		FROM warranties
 		WHERE car_plate = $1
 		ORDER BY created_at DESC
@@ -127,7 +125,6 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 			&expiryDate,
 			&warranty.CarPlate,
 			&warranty.Receipt,
-			&warranty.IsUsed,
 			&createdAt,
 			&updatedAt,
 		)
@@ -170,12 +167,11 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 	}
 
 	query := `
-		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.is_used, w.created_at, w.updated_at
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
 		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
-		AND w.is_used = FALSE
 		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
 		ORDER BY w.expiry_date DESC
 		LIMIT 1
@@ -198,7 +194,6 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 		&expiryDate,
 		&warranty.CarPlate,
 		&warranty.Receipt,
-		&warranty.IsUsed,
 		&createdAt,
 		&updatedAt,
 	)
@@ -237,12 +232,11 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 	}
 
 	query := `
-		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.is_used, w.created_at, w.updated_at
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
 		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
-		AND w.is_used = FALSE
 		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
 		ORDER BY w.expiry_date DESC
 	`
@@ -270,7 +264,6 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 			&expiryDate,
 			&warranty.CarPlate,
 			&warranty.Receipt,
-			&warranty.IsUsed,
 			&createdAt,
 			&updatedAt,
 		)

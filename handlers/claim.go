@@ -301,9 +301,9 @@ func ChangeClaimStatusToAccepted(c *gin.Context) {
 	tyreDetails := make([]models.TyreDetail, len(req.TyreDetails))
 	for i, td := range req.TyreDetails {
 		tyreDetails[i] = models.TyreDetail{
-			Brand: td.Brand,
-			Size:  td.Size,
-			Cost:  td.Cost,
+			Brand:        td.Brand,
+			Size:         td.Size,
+			TreadPattern: td.TreadPattern,
 		}
 	}
 
