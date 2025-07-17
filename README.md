@@ -10,6 +10,9 @@ A Go-based backend API for warranty and claim management system built with Gin, 
 - **Nullable email handling**: Warranty email fields are nullable in DB and handled with `pgtype.Text` in Go.
 - **Close claim endpoint**: `/api/admin/claim/:id/close` only sets `date_closed` for approved/rejected claims, returns updated claim.
 - **Date settled**: All approved/rejected claims in test data have a `date_settled` value.
+- **Cost removal**: Removed all cost-related functionality from tyre details and claims. Tyre details now only track brand and size.
+- **Tread pattern addition**: Added `tread_pattern` field to tyre details for better tyre identification and tracking.
+- **Shop information enhancement**: Master APIs now return `shop_name` and `contact` instead of just `shop_id` for better frontend usability.
 - **Frontend integration**: See below for migration and integration notes for frontend teams.
 - **API docs**: All new/changed endpoints are documented below.
 
@@ -50,6 +53,8 @@ Content-Type: application/json
 }
 ```
 **Response**: Returns created warranty with `id`, `purchase_date`, `expiry_date`, and `is_used` (default: `false`)
+
+**Email Confirmation**: If an email is provided, a confirmation email will be sent automatically with warranty details and important terms.
 
 #### Get Warranties by Car Plate
 ```
@@ -171,7 +176,6 @@ CREATE TABLE warranties (
     expiry_date DATE NOT NULL,
     car_plate VARCHAR(20) NOT NULL,
     receipt VARCHAR(500),
-    is_used BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -201,10 +205,9 @@ CREATE TABLE claims (
 CREATE TABLE tyre_details (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     claim_id UUID NOT NULL REFERENCES claims(id),
-    brand VARCHAR(100),
-    model VARCHAR(100),
-    size VARCHAR(50),
-    serial_number VARCHAR(100),
+    brand VARCHAR(100) NOT NULL,
+    size VARCHAR(50) NOT NULL,
+    tread_pattern VARCHAR(100) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -217,6 +220,7 @@ CREATE TABLE tyre_details (
 - **Car plate validation**: Ensures warranty matches claim car plate
 - **Receipt storage**: URL-based receipt storage (ready for S3/Supabase integration)
 - **Nullable email**: Email is optional for warranty registration
+- **Email confirmation**: Automatic email notifications with warranty details and terms
 
 #### Claim Management
 - **Status workflow**: `pending` → `approved`/`rejected` (with `date_settled`) → `closed` (with `date_closed`)
@@ -239,6 +243,11 @@ CREATE TABLE tyre_details (
    JWT_SECRET=your_jwt_secret_key
    PORT=8080
    ```
+2. **Email Configuration**: The application uses SMTP for sending warranty confirmation emails:
+   - SMTP Server: `mail.kitloongholdings.com`
+   - Port: `587`
+   - From: `contact.tayaria@kitloongholdings.com`
+   - Email sending is non-blocking and logged for debugging
 2. **Database Setup**: Run the SQL setup script:
    ```bash
    psql -d your_database -f setup.sql
@@ -286,6 +295,8 @@ CREATE TABLE tyre_details (
 {
   "id": "uuid",
   "shop_id": "uuid",
+  "shop_name": "Test Shop 1",
+  "contact": "+60123456789",
   "warranty_id": "uuid",
   "customer_name": "John Doe",
   "phone_number": "+60123456789",
@@ -306,10 +317,9 @@ CREATE TABLE tyre_details (
   "tyre_details": [
     {
       "id": "uuid",
-      "brand": "Michelin",
-      "model": "Primacy 4",
+      "brand": "Kumho",
       "size": "205/55R16",
-      "serial_number": "SN123456"
+      "tread_pattern": "Ecowing ES31"
     }
   ]
 }

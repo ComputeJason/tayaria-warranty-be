@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/models"
+	"tayaria-warranty-be/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,6 +24,17 @@ func RegisterWarranty(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// Send confirmation email to user (non-blocking)
+	if req.Email != "" {
+		go func() {
+			if err := utils.SendWarrantyConfirmationEmail(*warranty); err != nil {
+				log.Printf("Failed to send warranty confirmation email: %v", err)
+			} else {
+				log.Printf("Warranty confirmation email sent successfully to %s", req.Email)
+			}
+		}()
 	}
 
 	c.JSON(http.StatusCreated, warranty)
