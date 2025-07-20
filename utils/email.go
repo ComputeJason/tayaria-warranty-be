@@ -69,7 +69,7 @@ The Tayaria Team 🛞</p>
 func SendClaimAcceptanceEmail(claim *models.Claim) error {
 	m := gomail.NewMessage()
 	m.SetHeader("From", "contact.tayaria@kitloongholdings.com")
-	m.SetHeader("To", "jasonchenys1998@gmail.com")
+	m.SetHeader("To", "warranty@kitloongholdings.com")
 	m.SetHeader("Subject", "Claim Accepted - Tayaria Warranty")
 
 	// Format claim date (date only, no time)
@@ -108,11 +108,12 @@ func SendClaimAcceptanceEmail(claim *models.Claim) error {
   <p><strong>Claim date:</strong> %s</p>
   <p><strong>Shop name:</strong> %s</p>
   <p><strong>Shop contact:</strong> %s</p>
+  <p><strong>Vehicle Carplate:</strong> %s</p>
 
   <h3>Tyre Claim Details</h3>
   <p><strong>Quantity:</strong> %d</p>
   <ul>
-`, purchaseDate, claimDate, claim.ShopName, claim.Contact, len(claim.TyreDetails))
+`, purchaseDate, claimDate, claim.ShopName, claim.Contact, claim.CarPlate, len(claim.TyreDetails))
 
 	for _, tyre := range claim.TyreDetails {
 		body += fmt.Sprintf(`
