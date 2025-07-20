@@ -225,6 +225,66 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 	return &warranty, nil
 }
 
+// GetWarrantyByID retrieves a warranty by its ID
+func GetWarrantyByID(warrantyID string) (*models.Warranty, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
+		FROM warranties
+		WHERE id = $1
+	`
+
+	log.Printf("Executing SQL query: %s with params: [%s]", query, warrantyID)
+
+	row := db.QueryRow(context.Background(), query, warrantyID)
+
+	var warranty models.Warranty
+	var purchaseDate, expiryDate, createdAt, updatedAt pgtype.Timestamp
+	var email pgtype.Text
+
+	err := row.Scan(
+		&warranty.ID,
+		&warranty.Name,
+		&warranty.PhoneNumber,
+		&email,
+		&purchaseDate,
+		&expiryDate,
+		&warranty.CarPlate,
+		&warranty.Receipt,
+		&createdAt,
+		&updatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("warranty not found")
+		}
+		return nil, fmt.Errorf("failed to get warranty: %v", err)
+	}
+
+	// Convert pgtype values to Go types
+	if email.Valid {
+		warranty.Email = email.String
+	}
+	if purchaseDate.Valid {
+		warranty.PurchaseDate = purchaseDate.Time
+	}
+	if expiryDate.Valid {
+		warranty.ExpiryDate = expiryDate.Time
+	}
+	if createdAt.Valid {
+		warranty.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		warranty.UpdatedAt = updatedAt.Time
+	}
+
+	return &warranty, nil
+}
+
 // GetAllValidWarrantiesForCarPlate retrieves all valid warranties for a car plate that can be tagged to a claim
 func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error) {
 	if db == nil {

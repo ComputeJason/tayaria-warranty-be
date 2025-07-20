@@ -7,6 +7,7 @@ import (
 
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/models"
+	"tayaria-warranty-be/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -313,6 +314,15 @@ func ChangeClaimStatusToAccepted(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Send notification email to admin (non-blocking)
+	go func() {
+		if err := utils.SendClaimAcceptanceEmail(updatedClaim); err != nil {
+			log.Printf("Failed to send claim acceptance email: %v", err)
+		} else {
+			log.Printf("Claim acceptance email sent successfully for claim %s", claimID)
+		}
+	}()
 
 	c.JSON(http.StatusOK, updatedClaim)
 }

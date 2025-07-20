@@ -221,6 +221,7 @@ CREATE TABLE tyre_details (
 - **Receipt storage**: URL-based receipt storage (ready for S3/Supabase integration)
 - **Nullable email**: Email is optional for warranty registration
 - **Email confirmation**: Automatic email notifications with warranty details and terms
+- **Claim acceptance notifications**: Automatic email notifications to admin when claims are accepted (includes warranty purchase date)
 
 #### Claim Management
 - **Status workflow**: `pending` → `approved`/`rejected` (with `date_settled`) → `closed` (with `date_closed`)
@@ -243,11 +244,13 @@ CREATE TABLE tyre_details (
    JWT_SECRET=your_jwt_secret_key
    PORT=8080
    ```
-2. **Email Configuration**: The application uses SMTP for sending warranty confirmation emails:
+2. **Email Configuration**: The application uses SMTP for sending emails:
    - SMTP Server: `mail.kitloongholdings.com`
    - Port: `587`
    - From: `contact.tayaria@kitloongholdings.com`
    - Email sending is non-blocking and logged for debugging
+   - **Warranty confirmation emails**: Sent to users when warranties are registered
+   - **Claim acceptance notifications**: Sent to `jasonchenys1998@gmail.com` when claims are accepted (includes warranty purchase date)
 2. **Database Setup**: Run the SQL setup script:
    ```bash
    psql -d your_database -f setup.sql
