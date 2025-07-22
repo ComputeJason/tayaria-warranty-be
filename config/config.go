@@ -46,6 +46,9 @@ func Init() error {
 	log.Printf("SUPABASE_KEY: %s", os.Getenv("SUPABASE_KEY"))
 	log.Printf("DATABASE_URL: %s", os.Getenv("DATABASE_URL"))
 	log.Printf("STORAGE_BUCKET: %s", os.Getenv("STORAGE_BUCKET"))
+	log.Printf("AWS_ACCESS_KEY_ID: %s", os.Getenv("AWS_ACCESS_KEY_ID"))
+	log.Printf("AWS_SECRET_ACCESS_KEY: %s", maskSecret(os.Getenv("AWS_SECRET_ACCESS_KEY")))
+	log.Printf("AWS_REGION: %s", os.Getenv("AWS_REGION"))
 
 	AppConfig = Config{
 		SupabaseURL:   os.Getenv("SUPABASE_URL"),
@@ -63,7 +66,26 @@ func Init() error {
 		return fmt.Errorf("SUPABASE_KEY is not set")
 	}
 
+	// Validate AWS credentials for S3 functionality
+	if os.Getenv("AWS_ACCESS_KEY_ID") == "" {
+		log.Printf("Warning: AWS_ACCESS_KEY_ID is not set - S3 functionality may not work")
+	}
+	if os.Getenv("AWS_SECRET_ACCESS_KEY") == "" {
+		log.Printf("Warning: AWS_SECRET_ACCESS_KEY is not set - S3 functionality may not work")
+	}
+	if os.Getenv("AWS_REGION") == "" {
+		log.Printf("Warning: AWS_REGION is not set - S3 functionality may not work")
+	}
+
 	return nil
+}
+
+// maskSecret masks a secret string for logging (shows first 4 and last 4 characters)
+func maskSecret(secret string) string {
+	if len(secret) <= 8 {
+		return "***"
+	}
+	return secret[:4] + "..." + secret[len(secret)-4:]
 }
 
 func IsProduction() bool {

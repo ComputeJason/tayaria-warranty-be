@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/models"
@@ -362,4 +364,85 @@ func ChangeClaimStatusToRejected(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, updatedClaim)
+}
+
+// TagSupportingDocToClaim uploads a supporting document to a claim
+func TagSupportingDocToClaim(c *gin.Context) {
+	claimID := c.Param("id")
+
+	// Validate claim exists and is in accepted status
+	claim, err := db.GetClaimByID(claimID)
+	if err != nil {
+		if err.Error() == "claim not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if claim is in accepted status
+	if claim.Status != models.ApprovedStatus {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Supporting documents can only be uploaded to accepted claims"})
+		return
+	}
+
+	// Get the uploaded file
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Supporting document file is required"})
+		return
+	}
+	defer file.Close()
+
+	// Upload to S3
+	supportingDocURL, err := utils.UploadSupportingDocToS3(file, header, claimID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to upload supporting document: %v", err)})
+		return
+	}
+
+	// Update claim with supporting document URL
+	updatedClaim, err := db.UpdateClaimSupportingDoc(claimID, supportingDocURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update claim: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, updatedClaim)
+}
+
+// GetWarrantySupportingDoc returns a pre-signed URL for a claim's supporting document
+func GetWarrantySupportingDoc(c *gin.Context) {
+	claimID := c.Param("id")
+
+	// Get the supporting document URL from database
+	supportingDocURL, err := db.GetClaimSupportingDoc(claimID)
+	if err != nil {
+		if err.Error() == "claim not found" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Claim not found"})
+			return
+		}
+		if err.Error() == "no supporting document found for this claim" {
+			c.JSON(http.StatusNotFound, gin.H{"error": "No supporting document found for this claim"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Extract S3 key from the URL (remove the base URL)
+	s3Key := supportingDocURL
+	if strings.HasPrefix(supportingDocURL, utils.S3BaseURL) {
+		s3Key = strings.TrimPrefix(supportingDocURL, utils.S3BaseURL)
+	}
+
+	// Generate pre-signed URL (valid for 5 minutes)
+	presignedURL, err := utils.GeneratePresignedURL(s3Key, 5*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate pre-signed URL"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"supporting_doc_url": presignedURL})
 }

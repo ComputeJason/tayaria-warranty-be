@@ -172,7 +172,6 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
-		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
 		ORDER BY w.expiry_date DESC
 		LIMIT 1
 	`
@@ -297,7 +296,6 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
-		AND c.warranty_id IS NULL  -- Only get warranties not tagged to any claim
 		ORDER BY w.expiry_date DESC
 	`
 

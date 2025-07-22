@@ -31,12 +31,13 @@ type Claim struct {
 	DateSettled     *time.Time  `json:"date_settled"`
 	DateClosed      *time.Time  `json:"date_closed"`
 	// Customer info
-	CustomerName string    `json:"customer_name"`
-	PhoneNumber  string    `json:"phone_number"`
-	Email        string    `json:"email"`
-	CarPlate     string    `json:"car_plate"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	CustomerName     string    `json:"customer_name"`
+	PhoneNumber      string    `json:"phone_number"`
+	Email            string    `json:"email"`
+	CarPlate         string    `json:"car_plate"`
+	SupportingDocURL *string   `json:"supporting_doc_url"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 	// Optional field for when we need to include tyre details
 	TyreDetails []TyreDetail `json:"tyre_details,omitempty"`
 }

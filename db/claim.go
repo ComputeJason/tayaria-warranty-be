@@ -111,6 +111,102 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 	return &result, nil
 }
 
+// UpdateClaimSupportingDoc updates the supporting document URL for a claim
+func UpdateClaimSupportingDoc(claimID string, supportingDocURL string) (*models.Claim, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		UPDATE claims 
+		SET supporting_doc_url = $2, updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed, 
+		          customer_name, phone_number, email, car_plate, supporting_doc_url, created_at, updated_at
+	`
+
+	row := db.QueryRow(context.Background(), query, claimID, supportingDocURL)
+
+	var result models.Claim
+	var rejectionReason pgtype.Text
+	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+	var supportingDocURLField pgtype.Text
+
+	err := row.Scan(
+		&result.ID,
+		&result.WarrantyID,
+		&result.ShopID,
+		&result.Status,
+		&rejectionReason,
+		&dateSettled,
+		&dateClosed,
+		&result.CustomerName,
+		&result.PhoneNumber,
+		&result.Email,
+		&result.CarPlate,
+		&supportingDocURLField,
+		&createdAt,
+		&updatedAt,
+	)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("claim not found")
+		}
+		return nil, fmt.Errorf("failed to update claim supporting doc: %v", err)
+	}
+
+	// Convert pgtype values to Go types
+	if rejectionReason.Valid {
+		result.RejectionReason = rejectionReason.String
+	}
+	if dateSettled.Valid {
+		result.DateSettled = &dateSettled.Time
+	}
+	if dateClosed.Valid {
+		result.DateClosed = &dateClosed.Time
+	}
+	if supportingDocURLField.Valid {
+		result.SupportingDocURL = &supportingDocURLField.String
+	}
+	if createdAt.Valid {
+		result.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		result.UpdatedAt = updatedAt.Time
+	}
+
+	return &result, nil
+}
+
+// GetClaimSupportingDoc retrieves the supporting document URL for a claim
+func GetClaimSupportingDoc(claimID string) (string, error) {
+	if db == nil {
+		return "", fmt.Errorf("database connection not initialized")
+	}
+
+	query := `
+		SELECT supporting_doc_url
+		FROM claims
+		WHERE id = $1
+	`
+
+	var supportingDocURL pgtype.Text
+	err := db.QueryRow(context.Background(), query, claimID).Scan(&supportingDocURL)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", fmt.Errorf("claim not found")
+		}
+		return "", fmt.Errorf("failed to get claim supporting doc: %v", err)
+	}
+
+	if !supportingDocURL.Valid {
+		return "", fmt.Errorf("no supporting document found for this claim")
+	}
+
+	return supportingDocURL.String, nil
+}
+
 // GetShopClaims retrieves claims for a specific shop
 func GetShopClaims(shopID string) ([]models.Claim, error) {
 	if db == nil {
@@ -120,7 +216,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	query := `
 		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
 		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-		       c.created_at, c.updated_at
+		       c.supporting_doc_url, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
 		WHERE c.shop_id = $1
@@ -141,6 +237,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		var rejectionReason pgtype.Text
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 		var shopName, contact pgtype.Text
+		var supportingDocURL pgtype.Text
 
 		err := rows.Scan(
 			&claim.ID,
@@ -156,6 +253,7 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 			&claim.PhoneNumber,
 			&claim.Email,
 			&claim.CarPlate,
+			&supportingDocURL,
 			&createdAt,
 			&updatedAt,
 		)
@@ -186,6 +284,9 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		if updatedAt.Valid {
 			claim.UpdatedAt = updatedAt.Time
 		}
+		if supportingDocURL.Valid {
+			claim.SupportingDocURL = &supportingDocURL.String
+		}
 
 		claims = append(claims, claim)
 	}
@@ -206,7 +307,7 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	query := `
 		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
 		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-		       c.created_at, c.updated_at
+		       c.supporting_doc_url, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
 		WHERE c.id = $1
@@ -220,6 +321,7 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	var rejectionReason pgtype.Text
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 	var shopName, contact pgtype.Text
+	var supportingDocURL pgtype.Text
 
 	err := row.Scan(
 		&claim.ID,
@@ -235,6 +337,7 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 		&claim.PhoneNumber,
 		&claim.Email,
 		&claim.CarPlate,
+		&supportingDocURL,
 		&createdAt,
 		&updatedAt,
 	)
@@ -271,6 +374,9 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	if updatedAt.Valid {
 		claim.UpdatedAt = updatedAt.Time
 	}
+	if supportingDocURL.Valid {
+		claim.SupportingDocURL = &supportingDocURL.String
+	}
 
 	return &claim, nil
 }
@@ -286,7 +392,7 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 		SET status = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-		          customer_name, phone_number, email, car_plate, created_at, updated_at
+		          customer_name, phone_number, email, car_plate, supporting_doc_url, created_at, updated_at
 	`
 
 	log.Printf("Executing SQL query: %s with params: [%s, %s, %s]", query, claimID, status, rejectionReason)
@@ -296,6 +402,7 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	var claim models.Claim
 	var rejectionReasonDB pgtype.Text
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
+	var supportingDocURL pgtype.Text
 
 	err := row.Scan(
 		&claim.ID,
@@ -309,6 +416,7 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 		&claim.PhoneNumber,
 		&claim.Email,
 		&claim.CarPlate,
+		&supportingDocURL,
 		&createdAt,
 		&updatedAt,
 	)
@@ -335,6 +443,9 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	}
 	if updatedAt.Valid {
 		claim.UpdatedAt = updatedAt.Time
+	}
+	if supportingDocURL.Valid {
+		claim.SupportingDocURL = &supportingDocURL.String
 	}
 
 	// Get shop information

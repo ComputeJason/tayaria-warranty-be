@@ -3,6 +3,8 @@ package handlers
 import (
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/models"
@@ -13,26 +15,54 @@ import (
 
 // POST /api/user/warranty
 func RegisterWarranty(c *gin.Context) {
-	var req models.CreateWarrantyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// Parse FormData
+	file, header, err := c.Request.FormFile("receipt")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Receipt file is required and must be PDF, JPG, or PNG"})
+		return
+	}
+	defer file.Close()
+
+	name := c.PostForm("name")
+	phoneNumber := c.PostForm("phone_number")
+	email := c.PostForm("email")
+	purchaseDateStr := c.PostForm("purchase_date")
+	carPlate := c.PostForm("car_plate")
+
+	// Parse purchase date
+	purchaseDate, err := time.Parse(time.RFC3339, purchaseDateStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid purchase_date format. Use ISO8601 (RFC3339)"})
 		return
 	}
 
+	// Upload to S3 (or fallback)
+	receiptURL, uploadErr := utils.UploadReceiptToS3(file, header, carPlate)
+	if uploadErr != nil {
+		log.Printf("[WARN] S3 upload failed: %v. Using fallback URL.", uploadErr)
+	}
+
 	// Create warranty in database
-	warranty, err := db.CreateWarranty(req)
+	warranty, err := db.CreateWarranty(models.CreateWarrantyRequest{
+		Name:         name,
+		PhoneNumber:  phoneNumber,
+		Email:        email,
+		PurchaseDate: purchaseDate,
+		CarPlate:     carPlate,
+		Receipt:      receiptURL,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Send confirmation email to user (non-blocking)
-	if req.Email != "" {
+	if email != "" {
 		go func() {
 			if err := utils.SendWarrantyConfirmationEmail(*warranty); err != nil {
 				log.Printf("Failed to send warranty confirmation email: %v", err)
 			} else {
-				log.Printf("Warranty confirmation email sent successfully to %s", req.Email)
+				log.Printf("Warranty confirmation email sent successfully to %s", email)
 			}
 		}()
 	}
@@ -85,7 +115,19 @@ func GetWarrantyReceipt(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"receipt_url": receiptURL})
+	// Extract S3 key from the URL (remove the base URL)
+	s3Key := receiptURL
+	if strings.HasPrefix(receiptURL, utils.S3BaseURL) {
+		s3Key = strings.TrimPrefix(receiptURL, utils.S3BaseURL)
+	}
+
+	presignedURL, err := utils.GeneratePresignedURL(s3Key, 5*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate pre-signed URL"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"receipt_url": presignedURL})
 }
 
 // GET /api/master/warranties/valid/:carPlate

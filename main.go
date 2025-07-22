@@ -62,6 +62,7 @@ func main() {
 		userRoutes.GET("/warranties/car-plate/:carPlate", handlers.GetWarrantiesByCarPlate) // this is for User Warranty Check
 		userRoutes.GET("/warranties/valid/:carPlate", handlers.HasValidWarrantyByCarPlate)
 		userRoutes.GET("/warranty/receipt/:id", handlers.GetWarrantyReceipt)
+		userRoutes.GET("/claim/:id/supporting-doc", handlers.GetWarrantySupportingDoc)
 	}
 
 	// Admin routes (protected)
@@ -86,6 +87,7 @@ func main() {
 		masterRoutes.POST("/claim/:id/pending", handlers.ChangeClaimStatusToPending)
 		masterRoutes.POST("/claim/:id/accept", handlers.ChangeClaimStatusToAccepted)
 		masterRoutes.POST("/claim/:id/reject", handlers.ChangeClaimStatusToRejected)
+		masterRoutes.POST("/claim/:id/supporting-doc", handlers.TagSupportingDocToClaim)
 		// warranty management
 		masterRoutes.GET("/warranties/valid/:carPlate", handlers.GetValidWarrantiesForTagging)
 		// retail account management

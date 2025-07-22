@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS claims (
     car_plate VARCHAR(20) NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'unacknowledged' CHECK (status IN ('unacknowledged', 'pending', 'approved', 'rejected', 'closed')),
     rejection_reason TEXT,
+    supporting_doc_url TEXT,
     date_settled TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
