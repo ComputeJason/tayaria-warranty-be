@@ -26,7 +26,7 @@ func pingServer(port string) {
 		// On Render, use the RENDER_EXTERNAL_URL environment variable
 		renderURL := os.Getenv("RENDER_EXTERNAL_URL")
 		if renderURL != "" {
-			pingURL = renderURL + "/ping"
+			pingURL = renderURL + "api/ping"
 		} else {
 			// Fallback to localhost if RENDER_EXTERNAL_URL is not set
 			pingURL = "http://localhost:" + port + "/api/ping"
