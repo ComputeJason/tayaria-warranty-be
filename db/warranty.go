@@ -169,7 +169,6 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 	query := `
 		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
-		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
 		ORDER BY w.expiry_date DESC
@@ -293,7 +292,6 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 	query := `
 		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
-		LEFT JOIN claims c ON w.id = c.warranty_id
 		WHERE w.car_plate = $1 
 		AND w.expiry_date >= CURRENT_DATE
 		ORDER BY w.expiry_date DESC
