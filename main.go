@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -9,9 +10,47 @@ import (
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/handlers"
 	"tayaria-warranty-be/middleware"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// pingServer pings the server every 10 minutes to keep it active
+func pingServer(port string) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	// Determine the URL to ping
+	var pingURL string
+	if os.Getenv("RENDER") == "true" {
+		// On Render, use the RENDER_EXTERNAL_URL environment variable
+		renderURL := os.Getenv("RENDER_EXTERNAL_URL")
+		if renderURL != "" {
+			pingURL = renderURL + "/ping"
+		} else {
+			// Fallback to localhost if RENDER_EXTERNAL_URL is not set
+			pingURL = "http://localhost:" + port + "/api/ping"
+		}
+	} else {
+		// Local development
+		pingURL = "http://localhost:" + port + "/api/ping"
+	}
+
+	log.Printf("🔗 Auto-ping will use URL: %s", pingURL)
+
+	for {
+		select {
+		case <-ticker.C:
+			resp, err := http.Get(pingURL)
+			if err != nil {
+				log.Printf("❌ Failed to ping server: %v", err)
+			} else {
+				resp.Body.Close()
+				log.Printf("✅ Server pinged successfully at %s", time.Now().Format("15:04:05"))
+			}
+		}
+	}
+}
 
 func main() {
 	// Initialize configuration
@@ -100,6 +139,10 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
+	// Start the ping goroutine to keep server active
+	go pingServer(port)
+	log.Printf("🚀 Auto-ping started - server will ping itself every 10 minutes to stay active on Render")
 
 	// Start server
 	if err := r.Run(":" + port); err != nil {

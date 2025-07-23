@@ -11,9 +11,11 @@ import (
 
 // SendWarrantyConfirmationEmail sends a confirmation email to the user when a warranty is registered
 func SendWarrantyConfirmationEmail(warranty models.Warranty) error {
+	fmt.Printf("🔍 Starting to send warranty confirmation email to: %s\n", warranty.Email)
+
 	m := gomail.NewMessage()
 	m.SetHeader("From", "contact.tayaria@kitloongholdings.com")
-	m.SetHeader("To", warranty.Email)
+	m.SetHeader("To", "0jasoon0@gmail.com")
 	m.SetHeader("Subject", "Warranty Registration Confirmation - Tayaria")
 
 	// Create email body with warranty details and important information
@@ -54,14 +56,18 @@ The Tayaria Team 🛞</p>
 
 	m.SetBody("text/html", body)
 
+	fmt.Printf("📧 Email body prepared, attempting to send...\n")
+
 	// Configure SMTP dialer
 	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
 
 	// Send the email
 	if err := d.DialAndSend(m); err != nil {
+		fmt.Printf("❌ Failed to send email: %v\n", err)
 		return fmt.Errorf("failed to send warranty confirmation email: %w", err)
 	}
 
+	fmt.Printf("✅ Email sent successfully to %s\n", warranty.Email)
 	return nil
 }
 
