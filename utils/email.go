@@ -15,7 +15,7 @@ func SendWarrantyConfirmationEmail(warranty models.Warranty) error {
 
 	m := gomail.NewMessage()
 	m.SetHeader("From", "contact.tayaria@kitloongholdings.com")
-	m.SetHeader("To", "0jasoon0@gmail.com")
+	m.SetHeader("To", warranty.Email)
 	m.SetHeader("Subject", "Warranty Registration Confirmation - Tayaria")
 
 	// Create email body with warranty details and important information
