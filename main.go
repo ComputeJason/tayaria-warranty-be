@@ -15,43 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// pingServer pings the server every 10 minutes to keep it active
-func pingServer(port string) {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-
-	// Determine the URL to ping
-	var pingURL string
-	if os.Getenv("RENDER") == "true" {
-		// On Render, use the RENDER_EXTERNAL_URL environment variable
-		renderURL := os.Getenv("RENDER_EXTERNAL_URL")
-		if renderURL != "" {
-			pingURL = renderURL + "/api/ping"
-		} else {
-			// Fallback to localhost if RENDER_EXTERNAL_URL is not set
-			pingURL = "http://localhost:" + port + "/api/ping"
-		}
-	} else {
-		// Local development
-		pingURL = "http://localhost:" + port + "/api/ping"
-	}
-
-	log.Printf("🔗 Auto-ping will use URL: %s", pingURL)
-
-	for {
-		select {
-		case <-ticker.C:
-			resp, err := http.Get(pingURL)
-			if err != nil {
-				log.Printf("❌ Failed to ping server: %v", err)
-			} else {
-				resp.Body.Close()
-				log.Printf("✅ Server pinged successfully at %s", time.Now().Format("15:04:05"))
-			}
-		}
-	}
-}
-
 func main() {
 	// Initialize configuration
 	if err := config.Init(); err != nil {
@@ -89,6 +52,7 @@ func main() {
 
 	// Health check
 	r.GET("/api/ping", handlers.Ping)
+	r.GET("/api/db-ping", handlers.DBPing)
 
 	// Public auth routes
 	r.POST("/api/admin/login", handlers.AdminLogin)
@@ -144,8 +108,82 @@ func main() {
 	go pingServer(port)
 	log.Printf("🚀 Auto-ping started - server will ping itself every 10 minutes to stay active on Render")
 
+	// Start the daily DB ping goroutine to keep database active
+	go dailyDBPing()
+	log.Printf("🗄️ Daily DB ping started - database will be pinged every 24 hours")
+
 	// Start server
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
+	}
+}
+
+// pingServer pings the server every 10 minutes to keep it active
+func pingServer(port string) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	// Determine the URL to ping
+	var pingURL string
+	var dbPingURL string
+	if os.Getenv("RENDER") == "true" {
+		// On Render, use the RENDER_EXTERNAL_URL environment variable
+		renderURL := os.Getenv("RENDER_EXTERNAL_URL")
+		if renderURL != "" {
+			pingURL = renderURL + "/ping"
+			dbPingURL = renderURL + "/api/db-ping"
+		} else {
+			// Fallback to localhost if RENDER_EXTERNAL_URL is not set
+			pingURL = "http://localhost:" + port + "/ping"
+			dbPingURL = "http://localhost:" + port + "/api/db-ping"
+		}
+	} else {
+		// Local development
+		pingURL = "http://localhost:" + port + "/ping"
+		dbPingURL = "http://localhost:" + port + "/api/db-ping"
+	}
+
+	log.Printf("🔗 Auto-ping will use URLs: %s and %s", pingURL, dbPingURL)
+
+	for {
+		select {
+		case <-ticker.C:
+			// Ping the main server
+			resp, err := http.Get(pingURL)
+			if err != nil {
+				log.Printf("❌ Failed to ping server: %v", err)
+			} else {
+				resp.Body.Close()
+				log.Printf("✅ Server pinged successfully at %s", time.Now().Format("15:04:05"))
+			}
+
+			// Also ping the database
+			resp2, err := http.Get(dbPingURL)
+			if err != nil {
+				log.Printf("❌ Failed to ping database: %v", err)
+			} else {
+				resp2.Body.Close()
+				log.Printf("✅ Database pinged successfully at %s", time.Now().Format("15:04:05"))
+			}
+		}
+	}
+}
+
+// DailyDBPing pings the database once every day to keep it active
+func dailyDBPing() {
+	ticker := time.NewTicker(24 * time.Hour) // Ping every 24 hours
+	defer ticker.Stop()
+
+	log.Printf("🔄 Daily DB ping started - will ping database every 24 hours")
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := db.PingDatabase(); err != nil {
+				log.Printf("❌ Daily DB ping failed: %v", err)
+			} else {
+				log.Printf("✅ Daily DB ping successful at %s", time.Now().Format("2006-01-02 15:04:05"))
+			}
+		}
 	}
 }

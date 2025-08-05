@@ -36,7 +36,7 @@ func SendWarrantyConfirmationEmail(warranty models.Warranty) error {
 2) Valid only if tyre has above 6mm of tread depth left<br>
 3) Valid only after a minimum purchase of 2 pcs in single receipt<br>
 4) Valid only for digital receipt<br>
-5) Invalid for tyre damages that are beyond repair</p>
+5) Valid only for tyre damages that are beyond repair</p>
 
 <p>🔧 Need to file a claim? Head down to your nearest <a href="https://tayaria.com/where-to-buy/?search=Kuala+Lumpur%%2CFederal+Territory+of+Kuala+Lumpur%%2CMalaysia">Tayaria shop</a></p>
 

@@ -38,6 +38,21 @@ func Init() error {
 	return nil
 }
 
+// PingDatabase performs a simple SELECT 1 query to check database connectivity
+func PingDatabase() error {
+	if db == nil {
+		return fmt.Errorf("database connection not initialized")
+	}
+
+	var result int
+	err := db.QueryRow(context.Background(), "SELECT 1").Scan(&result)
+	if err != nil {
+		return fmt.Errorf("database ping failed: %v", err)
+	}
+
+	return nil
+}
+
 func Close() {
 	if db != nil {
 		db.Close()
