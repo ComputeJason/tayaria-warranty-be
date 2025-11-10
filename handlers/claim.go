@@ -50,6 +50,22 @@ func CreateClaim(c *gin.Context) {
 		return
 	}
 
+	// Send notification email to admin (non-blocking)
+	go func() {
+		// Get full claim details with shop info
+		fullClaim, err := db.GetClaimByID(claim.ID)
+		if err != nil {
+			log.Printf("Failed to get full claim details for email: %v", err)
+			return
+		}
+
+		if err := utils.SendClaimCreationEmail(fullClaim); err != nil {
+			log.Printf("Failed to send claim creation email: %v", err)
+		} else {
+			log.Printf("Claim creation email sent successfully for claim %s", claim.ID)
+		}
+	}()
+
 	c.JSON(http.StatusCreated, claim)
 }
 
@@ -362,6 +378,20 @@ func ChangeClaimStatusToRejected(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Send notification email to admin (non-blocking)
+	go func() {
+		// Use the claim we already fetched + updated rejection details
+		claim.RejectionReason = updatedClaim.RejectionReason
+		claim.Status = updatedClaim.Status
+		claim.UpdatedAt = updatedClaim.UpdatedAt
+
+		if err := utils.SendClaimRejectionEmail(claim); err != nil {
+			log.Printf("Failed to send claim rejection email: %v", err)
+		} else {
+			log.Printf("Claim rejection email sent successfully for claim %s", claimID)
+		}
+	}()
 
 	c.JSON(http.StatusOK, updatedClaim)
 }

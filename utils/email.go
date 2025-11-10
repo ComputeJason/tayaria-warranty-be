@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"time"
 
 	"tayaria-warranty-be/db"
 	"tayaria-warranty-be/models"
@@ -59,6 +60,7 @@ The Tayaria Team 🛞</p>
 	fmt.Printf("📧 Email body prepared, attempting to send...\n")
 
 	// Configure SMTP dialer
+	// Port 587 automatically uses STARTTLS in gomail.v2
 	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
 
 	// Send the email
@@ -139,6 +141,7 @@ func SendClaimAcceptanceEmail(claim *models.Claim) error {
 	m.SetBody("text/html", body)
 
 	// Configure SMTP dialer
+	// Port 587 automatically uses STARTTLS in gomail.v2
 	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
 
 	// Send the email
@@ -146,5 +149,147 @@ func SendClaimAcceptanceEmail(claim *models.Claim) error {
 		return fmt.Errorf("failed to send claim acceptance email: %w", err)
 	}
 
+	return nil
+}
+
+// SendClaimCreationEmail sends a notification email to admin when a new claim is created
+func SendClaimCreationEmail(claim *models.Claim) error {
+	fmt.Printf("Starting to send claim creation email for claim ID: %s\n", claim.ID)
+
+	m := gomail.NewMessage()
+	m.SetHeader("From", "contact.tayaria@kitloongholdings.com")
+	m.SetHeader("To", "warranty@kitloongholdings.com")
+	m.SetHeader("Subject", fmt.Sprintf("New Warranty Claim Submitted - Car Plate: %s - Action Required", claim.CarPlate))
+
+	// Format claim date with time in Malaysia timezone (GMT+8)
+	malaysiaLoc, _ := time.LoadLocation("Asia/Kuala_Lumpur")
+	claimDate := claim.CreatedAt.In(malaysiaLoc).Format("January 2, 2006 at 3:04 PM")
+
+	// Create email body
+	body := fmt.Sprintf(`
+<html>
+<body>
+  <h2>New Warranty Claim Submitted</h2>
+  
+  <p>A new warranty claim has been created and requires your attention.</p>
+  
+  <hr>
+  
+  <h3>Claim Information</h3>
+  <p><strong>Status:</strong> Unacknowledged<br>
+  <strong>Submitted:</strong> %s</p>
+  
+  <h3>Shop Details</h3>
+  <p><strong>Shop Name:</strong> %s<br>
+  <strong>Contact:</strong> %s</p>
+  
+  <h3>Customer Information</h3>
+  <p><strong>Name:</strong> %s<br>
+  <strong>Phone:</strong> %s<br>
+  <strong>Email:</strong> %s<br>
+  <strong>Vehicle Plate:</strong> %s</p>
+  
+  <hr>
+  
+  <h3>Next Steps</h3>
+  <ol>
+    <li>Review the claim details in the admin portal</li>
+    <li>Verify warranty validity</li>
+    <li>Change status to "Pending" to proceed with processing</li>
+  </ol>
+  
+  <p>Best regards,<br>
+  Tayaria Warranty System</p>
+</body>
+</html>
+`, claimDate, claim.ShopName, claim.Contact, claim.CustomerName,
+		claim.PhoneNumber, claim.Email, claim.CarPlate)
+
+	m.SetBody("text/html", body)
+
+	fmt.Printf("Email body prepared, attempting to send...\n")
+
+	// Configure SMTP dialer
+	// Port 587 automatically uses STARTTLS in gomail.v2
+	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+
+	// Send the email
+	if err := d.DialAndSend(m); err != nil {
+		fmt.Printf("Failed to send claim creation email: %v\n", err)
+		return fmt.Errorf("failed to send claim creation email: %w", err)
+	}
+
+	fmt.Printf("Claim creation email sent successfully for claim %s\n", claim.ID)
+	return nil
+}
+
+// SendClaimRejectionEmail sends a notification email to admin when a claim is rejected
+func SendClaimRejectionEmail(claim *models.Claim) error {
+	fmt.Printf("Starting to send claim rejection email for claim ID: %s\n", claim.ID)
+
+	m := gomail.NewMessage()
+	m.SetHeader("From", "contact.tayaria@kitloongholdings.com")
+	m.SetHeader("To", "warranty@kitloongholdings.com")
+	m.SetHeader("Subject", fmt.Sprintf("Claim Rejected - Car Plate: %s", claim.CarPlate))
+
+	// Format rejection date with time in Malaysia timezone (GMT+8)
+	malaysiaLoc, _ := time.LoadLocation("Asia/Kuala_Lumpur")
+	rejectionDate := claim.UpdatedAt.In(malaysiaLoc).Format("January 2, 2006 at 3:04 PM")
+
+	// Create email body
+	body := fmt.Sprintf(`
+<html>
+<body>
+  <h2>Warranty Claim Rejected</h2>
+  
+  <p>A warranty claim has been rejected. This email serves as an internal record for your admin processes.</p>
+  
+  <hr>
+  
+  <h3>Claim Information</h3>
+  <p><strong>Status:</strong> Rejected<br>
+  <strong>Rejected On:</strong> %s</p>
+  
+  <h3>Shop Details</h3>
+  <p><strong>Shop Name:</strong> %s<br>
+  <strong>Contact:</strong> %s</p>
+  
+  <h3>Customer Information</h3>
+  <p><strong>Name:</strong> %s<br>
+  <strong>Phone:</strong> %s<br>
+  <strong>Email:</strong> %s<br>
+  <strong>Vehicle Plate:</strong> %s</p>
+  
+  <h3>Rejection Reason</h3>
+  <p style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #e74c3c;">
+  %s
+  </p>
+  
+  <hr>
+  
+  <p><em>This is an automated notification for internal record-keeping.</em></p>
+  
+  <p>Best regards,<br>
+  Tayaria Warranty System</p>
+</body>
+</html>
+`, rejectionDate, claim.ShopName, claim.Contact, claim.CustomerName,
+		claim.PhoneNumber, claim.Email, claim.CarPlate, claim.RejectionReason)
+
+	m.SetBody("text/html", body)
+
+	fmt.Printf("Email body prepared, attempting to send...\n")
+
+	// Configure SMTP dialer
+	// Port 587 automatically uses STARTTLS in gomail.v2
+	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+
+	// Send the email
+	if err := d.DialAndSend(m); err != nil {
+		fmt.Printf("Failed to send claim rejection email: %v\n", err)
+		return fmt.Errorf("failed to send claim rejection email: %w", err)
+	}
+
+	fmt.Printf("Claim rejection email sent successfully for claim %s\n", claim.ID)
 	return nil
 }
