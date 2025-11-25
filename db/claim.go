@@ -807,64 +807,69 @@ func GetClaimWithTyreDetails(claimID string) (*models.Claim, error) {
 }
 
 // RejectClaim changes claim status to rejected with a reason
-func RejectClaim(claimID string, reason string) (*models.Claim, error) {
+func RejectClaim(claimID string, reason string, tyreDetails []models.TyreDetail) (*models.Claim, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
-	query := `
+	// Start transaction (needed if tyre details are provided)
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
+
+	// Update claim status to rejected
+	updateClaimQuery := `
 		UPDATE claims 
 		SET status = $2, 
 		    rejection_reason = $3,
 		    updated_at = CURRENT_TIMESTAMP,
 		    date_settled = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status = 'pending'
-		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
-		          date_settled, date_closed,
-		          customer_name, phone_number, email, car_plate,
-		          created_at, updated_at`
+		RETURNING id`
 
-	var claim models.Claim
-	var warrantyID, rejectionReason pgtype.Text
-	var dateSettled, dateClosed pgtype.Timestamp
-
-	err := db.QueryRow(context.Background(), query, claimID, models.RejectedStatus, reason).Scan(
-		&claim.ID,
-		&warrantyID,
-		&claim.ShopID,
-		&claim.Status,
-		&rejectionReason,
-		&dateSettled,
-		&dateClosed,
-		&claim.CustomerName,
-		&claim.PhoneNumber,
-		&claim.Email,
-		&claim.CarPlate,
-		&claim.CreatedAt,
-		&claim.UpdatedAt,
-	)
-
+	var claimIDResult string
+	err = tx.QueryRow(context.Background(), updateClaimQuery, claimID, models.RejectedStatus, reason).Scan(&claimIDResult)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, fmt.Errorf("claim not found or not in pending status")
 		}
-		return nil, fmt.Errorf("failed to update claim: %v", err)
+		return nil, fmt.Errorf("failed to update claim status: %v", err)
 	}
 
-	if warrantyID.Valid {
-		claim.WarrantyID = &warrantyID.String
-	}
-	if rejectionReason.Valid {
-		claim.RejectionReason = rejectionReason.String
-	}
-	if dateSettled.Valid {
-		claim.DateSettled = &dateSettled.Time
-	}
-	if dateClosed.Valid {
-		claim.DateClosed = &dateClosed.Time
+	// Insert tyre details if provided
+	if len(tyreDetails) > 0 {
+		insertTyreQuery := `
+			INSERT INTO tyre_details (claim_id, brand, size, tread_pattern)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id, created_at`
+
+		for i := range tyreDetails {
+			var tyreID string
+			var createdAt time.Time
+			err = tx.QueryRow(context.Background(), insertTyreQuery,
+				claimID,
+				tyreDetails[i].Brand,
+				tyreDetails[i].Size,
+				tyreDetails[i].TreadPattern,
+			).Scan(&tyreID, &createdAt)
+			if err != nil {
+				return nil, fmt.Errorf("failed to insert tyre detail: %v", err)
+			}
+			tyreDetails[i].ID = tyreID
+			tyreDetails[i].ClaimID = claimID
+			tyreDetails[i].CreatedAt = createdAt
+		}
 	}
 
-	return &claim, nil
+	// Commit transaction
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	// Get updated claim with tyre details (if any)
+	return GetClaimWithTyreDetails(claimID)
 }
 
 // CloseClaim updates the date_closed field of a claim

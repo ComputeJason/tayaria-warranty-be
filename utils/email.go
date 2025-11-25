@@ -264,7 +264,33 @@ func SendClaimRejectionEmail(claim *models.Claim) error {
   <p style="background-color: #f9f9f9; padding: 15px; border-left: 4px solid #e74c3c;">
   %s
   </p>
-  
+`, rejectionDate, claim.ShopName, claim.Contact, claim.CustomerName,
+		claim.PhoneNumber, claim.Email, claim.CarPlate, claim.RejectionReason)
+
+	// Add tyre details section if provided
+	if len(claim.TyreDetails) > 0 {
+		body += fmt.Sprintf(`
+  <h3>Tyre Details</h3>
+  <p><strong>Quantity:</strong> %d</p>
+  <ul>
+`, len(claim.TyreDetails))
+
+		for _, tyre := range claim.TyreDetails {
+			body += fmt.Sprintf(`
+    <li>
+      <strong>Brand:</strong> %s<br>
+      <strong>Size:</strong> %s<br>
+      <strong>Tread Pattern:</strong> %s
+    </li>
+`, tyre.Brand, tyre.Size, tyre.TreadPattern)
+		}
+
+		body += `
+  </ul>
+`
+	}
+
+	body += `
   <hr>
   
   <p><em>This is an automated notification for internal record-keeping.</em></p>
@@ -273,8 +299,7 @@ func SendClaimRejectionEmail(claim *models.Claim) error {
   Tayaria Warranty System</p>
 </body>
 </html>
-`, rejectionDate, claim.ShopName, claim.Contact, claim.CustomerName,
-		claim.PhoneNumber, claim.Email, claim.CarPlate, claim.RejectionReason)
+`
 
 	m.SetBody("text/html", body)
 

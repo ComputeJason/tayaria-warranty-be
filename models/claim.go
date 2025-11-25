@@ -69,4 +69,9 @@ type AcceptClaimRequest struct {
 
 type RejectClaimRequest struct {
 	RejectionReason string `json:"rejection_reason" binding:"required"`
+	TyreDetails     []struct {
+		Brand        string `json:"brand" binding:"required"`
+		Size         string `json:"size" binding:"required"`
+		TreadPattern string `json:"tread_pattern" binding:"required"`
+	} `json:"tyre_details,omitempty" binding:"omitempty,max=4,dive"`
 }

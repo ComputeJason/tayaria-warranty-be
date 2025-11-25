@@ -2,6 +2,28 @@
 
 A Go-based backend API for warranty and claim management system built with Gin, PostgreSQL (Supabase), and deployed on Render.
 
+## 🆕 Latest Update (2025-11-20)
+
+**Reject Claim API Enhancement** - Optional tyre details support added!
+
+The reject claim API now accepts optional tyre details for record-keeping when tyres are returned to customers.
+
+- ✅ **100% Backward Compatible** - No breaking changes
+- ✅ **Optional Feature** - Existing code continues to work
+- ✅ **Well Documented** - See frontend integration docs below
+
+**📚 Frontend Integration Docs:**
+- **[FRONTEND_INTEGRATION_SUMMARY.md](./FRONTEND_INTEGRATION_SUMMARY.md)** - Start here!
+- **[FE_QUICK_REFERENCE.md](./FE_QUICK_REFERENCE.md)** - Quick TL;DR
+- **[REJECT_API_CHANGELOG.md](./REJECT_API_CHANGELOG.md)** - Full documentation
+- **[API_TYPES.md](./API_TYPES.md)** - TypeScript types & examples
+
+**What Changed:**
+- `POST /api/master/claim/:id/reject` now accepts optional `tyre_details` array (0-4 tyres)
+- Response includes `tyre_details` if provided
+- Email notifications show returned tyre information
+- Transaction support added to reject operation
+
 ## Changelog (2024-06)
 - **Claims Accept/Reject endpoints**: `/api/master/claim/:id/accept` and `/api/master/claim/:id/reject` for master admins, with clear status transitions and error handling.
 - **snake_case JSON for claims**: All claim-related API payloads and DB structs now use snake_case for consistency with frontend.

@@ -372,8 +372,18 @@ func ChangeClaimStatusToRejected(c *gin.Context) {
 		return
 	}
 
-	// Update claim status with rejection reason
-	updatedClaim, err := db.RejectClaim(claimID, req.RejectionReason)
+	// Convert request tyre details to model (if provided)
+	tyreDetails := make([]models.TyreDetail, len(req.TyreDetails))
+	for i, td := range req.TyreDetails {
+		tyreDetails[i] = models.TyreDetail{
+			Brand:        td.Brand,
+			Size:         td.Size,
+			TreadPattern: td.TreadPattern,
+		}
+	}
+
+	// Update claim status with rejection reason and tyre details
+	updatedClaim, err := db.RejectClaim(claimID, req.RejectionReason, tyreDetails)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -381,12 +391,7 @@ func ChangeClaimStatusToRejected(c *gin.Context) {
 
 	// Send notification email to admin (non-blocking)
 	go func() {
-		// Use the claim we already fetched + updated rejection details
-		claim.RejectionReason = updatedClaim.RejectionReason
-		claim.Status = updatedClaim.Status
-		claim.UpdatedAt = updatedClaim.UpdatedAt
-
-		if err := utils.SendClaimRejectionEmail(claim); err != nil {
+		if err := utils.SendClaimRejectionEmail(updatedClaim); err != nil {
 			log.Printf("Failed to send claim rejection email: %v", err)
 		} else {
 			log.Printf("Claim rejection email sent successfully for claim %s", claimID)
