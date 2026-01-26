@@ -96,6 +96,9 @@ func main() {
 		// retail account management
 		masterRoutes.POST("/account", handlers.CreateRetailAccount)
 		masterRoutes.GET("/account", handlers.GetRetailAccounts)
+		// CSV export
+		masterRoutes.GET("/export/warranties", handlers.ExportWarrantiesCSV)
+		masterRoutes.GET("/export/claims", handlers.ExportClaimsCSV)
 	}
 
 	// Get port from environment variable or default to 8080
