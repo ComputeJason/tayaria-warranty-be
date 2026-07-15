@@ -154,6 +154,11 @@ func GeneratePresignedURL(s3Key string, expiresIn time.Duration) (string, error)
 	return presignResult.URL, nil
 }
 
+// ExtractS3Key returns the S3 object key from a full S3 URL
+func ExtractS3Key(fullURL string) string {
+	return strings.TrimPrefix(fullURL, S3BaseURL)
+}
+
 // randomString generates a random alphanumeric string of length n
 func randomString(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"

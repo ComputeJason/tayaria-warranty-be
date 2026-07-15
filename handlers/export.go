@@ -4,8 +4,10 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"time"
 
 	"tayaria-warranty-be/db"
+	"tayaria-warranty-be/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,6 +49,13 @@ func ExportWarrantiesCSV(c *gin.Context) {
 
 	// Write warranty data
 	for _, warranty := range warranties {
+		receiptURL := warranty.Receipt
+		if s3Key := utils.ExtractS3Key(receiptURL); s3Key != receiptURL {
+			if presigned, err := utils.GeneratePresignedURL(s3Key, 7*24*time.Hour); err == nil {
+				receiptURL = presigned
+			}
+		}
+
 		record := []string{
 			warranty.ID,
 			warranty.Name,
@@ -55,7 +64,7 @@ func ExportWarrantiesCSV(c *gin.Context) {
 			warranty.PurchaseDate.Format("2006-01-02T15:04:05Z07:00"),
 			warranty.ExpiryDate.Format("2006-01-02T15:04:05Z07:00"),
 			warranty.CarPlate,
-			warranty.Receipt,
+			receiptURL,
 			warranty.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			warranty.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
@@ -127,7 +136,13 @@ func ExportClaimsCSV(c *gin.Context) {
 
 		supportingDocURL := ""
 		if claim.SupportingDocURL != nil {
-			supportingDocURL = *claim.SupportingDocURL
+			rawURL := *claim.SupportingDocURL
+			if s3Key := utils.ExtractS3Key(rawURL); s3Key != rawURL {
+				if presigned, err := utils.GeneratePresignedURL(s3Key, 7*24*time.Hour); err == nil {
+					rawURL = presigned
+				}
+			}
+			supportingDocURL = rawURL
 		}
 
 		record := []string{
