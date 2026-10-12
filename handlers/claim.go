@@ -37,12 +37,17 @@ func CreateClaim(c *gin.Context) {
 		PhoneNumber:  req.PhoneNumber,
 		Email:        req.Email,
 		CarPlate:     req.CarPlate,
+		Brand:        req.Brand,
+		TyreDetails:  req.TyreDetails,
 	}
 
 	// Create claim in database (includes warranty validation)
 	claim, err := db.CreateClaim(completeReq, shopID.(string))
 	if err != nil {
-		if err.Error() == "no valid warranty found for car plate "+req.CarPlate {
+		// Match on the message prefix rather than the full string: db.CreateClaim normalizes
+		// (strips spaces from) the car plate before this error is built, so it may no longer
+		// be byte-identical to the raw, possibly-spaced req.CarPlate the client sent.
+		if strings.Contains(err.Error(), "no valid warranty found for car plate") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "No valid warranty found for this car plate"})
 			return
 		}

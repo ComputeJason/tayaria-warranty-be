@@ -76,6 +76,8 @@ func main() {
 		adminRoutes.POST("/claim", handlers.CreateClaim)
 		adminRoutes.GET("/claims", handlers.GetShopClaims)
 		adminRoutes.POST("/claim/:id/close", handlers.CloseClaim)
+		// warranty verification (dealer claim form "Verify" step)
+		adminRoutes.GET("/warranties/verify/:carPlate", handlers.VerifyCarPlateBrands)
 	}
 
 	// Master admin routes (protected)

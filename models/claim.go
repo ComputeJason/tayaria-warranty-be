@@ -20,6 +20,18 @@ type TyreDetail struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// ClaimTyreDetail is the per-tyre size + tread pattern the dealer enters at claim creation
+// time (one row per tyre requested). Brand is shared across all tyres in a claim and lives on
+// Claim.Brand instead. Distinct from TyreDetail, which holds the finalized tyres once a claim
+// is accepted/rejected.
+type ClaimTyreDetail struct {
+	ID           string    `json:"id"`
+	ClaimID      string    `json:"claim_id"`
+	Size         string    `json:"size"`
+	TreadPattern string    `json:"tread_pattern"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type Claim struct {
 	ID              string      `json:"id"`
 	WarrantyID      *string     `json:"warranty_id"`
@@ -38,6 +50,12 @@ type Claim struct {
 	SupportingDocURL *string   `json:"supporting_doc_url"`
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
+	// Tyre info entered by the dealer at claim creation time (metadata only - does not tag a
+	// specific warranty). Nullable since claims created before this field existed won't have it.
+	Brand    *string `json:"brand"`
+	Quantity *int    `json:"quantity"`
+	// Per-tyre size/pattern breakdown entered by the dealer (brand is shared, see Brand above).
+	RequestedTyreDetails []ClaimTyreDetail `json:"requested_tyre_details,omitempty"`
 	// Optional field for when we need to include tyre details
 	TyreDetails []TyreDetail `json:"tyre_details,omitempty"`
 }
@@ -48,6 +66,11 @@ type CreateClaimRequest struct {
 	PhoneNumber  string `json:"phone_number" binding:"required"`
 	Email        string `json:"email"`
 	CarPlate     string `json:"car_plate" binding:"required"`
+	Brand        string `json:"brand" binding:"required"`
+	TyreDetails  []struct {
+		Size         string `json:"size" binding:"required"`
+		TreadPattern string `json:"tread_pattern" binding:"required"`
+	} `json:"tyre_details" binding:"required,min=1,max=4"`
 }
 
 type TagWarrantyRequest struct {

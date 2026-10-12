@@ -10,6 +10,7 @@ type Warranty struct {
 	PurchaseDate time.Time `json:"purchase_date"`
 	ExpiryDate   time.Time `json:"expiry_date"`
 	CarPlate     string    `json:"car_plate"`
+	Brand        string    `json:"brand"`
 	Receipt      string    `json:"receipt"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -21,5 +22,6 @@ type CreateWarrantyRequest struct {
 	Email        string    `json:"email"`
 	PurchaseDate time.Time `json:"purchase_date" binding:"required"`
 	CarPlate     string    `json:"car_plate" binding:"required"`
+	Brand        string    `json:"brand" binding:"required"`
 	Receipt      string    `json:"receipt" binding:"required"`
 }

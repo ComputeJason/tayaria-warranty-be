@@ -19,6 +19,10 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	// Strip spaces so what's stored is always clean, regardless of how it was typed. Do this
+	// before the warranty lookup below too, so verification uses the same normalized value.
+	claim.CarPlate = normalizeCarPlate(claim.CarPlate)
+
 	// First verify if the shop exists
 	var exists bool
 	err := db.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&exists)
@@ -46,17 +50,24 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 
 	// Generate UUID for claim ID
 	claimID := uuid.New().String()
+	quantity := len(claim.TyreDetails)
+
+	tx, err := db.Begin(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback(context.Background())
 
 	query := `
-		INSERT INTO claims (id, warranty_id, shop_id, status, customer_name, phone_number, email, car_plate)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed, 
-		          customer_name, phone_number, email, car_plate, created_at, updated_at
+		INSERT INTO claims (id, warranty_id, shop_id, status, customer_name, phone_number, email, car_plate, brand, quantity)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		          customer_name, phone_number, email, car_plate, brand, quantity, created_at, updated_at
 	`
 
 	log.Printf("Creating claim with params: claimID=%s, warrantyID=%s, shopID=%s", claimID, warranty.ID, shopUUID)
 
-	row := db.QueryRow(context.Background(), query,
+	row := tx.QueryRow(context.Background(), query,
 		claimID,
 		nil,
 		shopUUID,
@@ -65,10 +76,13 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 		claim.PhoneNumber,
 		claim.Email,
 		claim.CarPlate,
+		claim.Brand,
+		quantity,
 	)
 
 	var result models.Claim
-	var rejectionReason pgtype.Text
+	var rejectionReason, brand pgtype.Text
+	var quantityDB pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 	err = row.Scan(
@@ -83,12 +97,41 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 		&result.PhoneNumber,
 		&result.Email,
 		&result.CarPlate,
+		&brand,
+		&quantityDB,
 		&createdAt,
 		&updatedAt,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create claim: %v", err)
+	}
+
+	// Insert the per-tyre size/pattern breakdown (brand is shared, already stored on the claim)
+	insertTyreQuery := `
+		INSERT INTO claim_tyre_details (claim_id, size, tread_pattern)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at`
+
+	requestedTyreDetails := make([]models.ClaimTyreDetail, len(claim.TyreDetails))
+	for i, td := range claim.TyreDetails {
+		var tyreID string
+		var tyreCreatedAt time.Time
+		err = tx.QueryRow(context.Background(), insertTyreQuery, claimID, td.Size, td.TreadPattern).Scan(&tyreID, &tyreCreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert claim tyre detail: %v", err)
+		}
+		requestedTyreDetails[i] = models.ClaimTyreDetail{
+			ID:           tyreID,
+			ClaimID:      claimID,
+			Size:         td.Size,
+			TreadPattern: td.TreadPattern,
+			CreatedAt:    tyreCreatedAt,
+		}
+	}
+
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
 	// Convert pgtype values to Go types
@@ -101,14 +144,53 @@ func CreateClaim(claim models.CreateClaimRequest, shopID string) (*models.Claim,
 	if dateClosed.Valid {
 		result.DateClosed = &dateClosed.Time
 	}
+	if brand.Valid {
+		result.Brand = &brand.String
+	}
+	if quantityDB.Valid {
+		q := int(quantityDB.Int32)
+		result.Quantity = &q
+	}
 	if createdAt.Valid {
 		result.CreatedAt = createdAt.Time
 	}
 	if updatedAt.Valid {
 		result.UpdatedAt = updatedAt.Time
 	}
+	result.RequestedTyreDetails = requestedTyreDetails
 
 	return &result, nil
+}
+
+// getRequestedTyreDetails retrieves the per-tyre size/pattern breakdown a dealer entered at
+// claim creation time (see the claim_tyre_details table). Brand is shared across tyres in a
+// claim and lives on Claim.Brand instead.
+func getRequestedTyreDetails(claimID string) ([]models.ClaimTyreDetail, error) {
+	query := `
+		SELECT id, claim_id, size, tread_pattern, created_at
+		FROM claim_tyre_details
+		WHERE claim_id = $1
+		ORDER BY created_at ASC`
+
+	rows, err := db.Query(context.Background(), query, claimID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query claim tyre details: %v", err)
+	}
+	defer rows.Close()
+
+	var details []models.ClaimTyreDetail
+	for rows.Next() {
+		var d models.ClaimTyreDetail
+		if err := rows.Scan(&d.ID, &d.ClaimID, &d.Size, &d.TreadPattern, &d.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan claim tyre detail: %v", err)
+		}
+		details = append(details, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating claim tyre details: %v", err)
+	}
+
+	return details, nil
 }
 
 // UpdateClaimSupportingDoc updates the supporting document URL for a claim
@@ -118,17 +200,18 @@ func UpdateClaimSupportingDoc(claimID string, supportingDocURL string) (*models.
 	}
 
 	query := `
-		UPDATE claims 
+		UPDATE claims
 		SET supporting_doc_url = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
-		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed, 
-		          customer_name, phone_number, email, car_plate, supporting_doc_url, created_at, updated_at
+		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
+		          customer_name, phone_number, email, car_plate, supporting_doc_url, brand, quantity, created_at, updated_at
 	`
 
 	row := db.QueryRow(context.Background(), query, claimID, supportingDocURL)
 
 	var result models.Claim
-	var rejectionReason pgtype.Text
+	var rejectionReason, brand pgtype.Text
+	var quantity pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 	var supportingDocURLField pgtype.Text
 
@@ -145,6 +228,8 @@ func UpdateClaimSupportingDoc(claimID string, supportingDocURL string) (*models.
 		&result.Email,
 		&result.CarPlate,
 		&supportingDocURLField,
+		&brand,
+		&quantity,
 		&createdAt,
 		&updatedAt,
 	)
@@ -168,6 +253,13 @@ func UpdateClaimSupportingDoc(claimID string, supportingDocURL string) (*models.
 	}
 	if supportingDocURLField.Valid {
 		result.SupportingDocURL = &supportingDocURLField.String
+	}
+	if brand.Valid {
+		result.Brand = &brand.String
+	}
+	if quantity.Valid {
+		q := int(quantity.Int32)
+		result.Quantity = &q
 	}
 	if createdAt.Valid {
 		result.CreatedAt = createdAt.Time
@@ -214,9 +306,9 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	}
 
 	query := `
-		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-		       c.supporting_doc_url, c.created_at, c.updated_at
+		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+		       c.supporting_doc_url, c.brand, c.quantity, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
 		WHERE c.shop_id = $1
@@ -234,7 +326,8 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 	claims := []models.Claim{} // Initialize empty slice
 	for rows.Next() {
 		var claim models.Claim
-		var rejectionReason pgtype.Text
+		var rejectionReason, brand pgtype.Text
+		var quantity pgtype.Int4
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 		var shopName, contact pgtype.Text
 		var supportingDocURL pgtype.Text
@@ -254,6 +347,8 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 			&claim.Email,
 			&claim.CarPlate,
 			&supportingDocURL,
+			&brand,
+			&quantity,
 			&createdAt,
 			&updatedAt,
 		)
@@ -277,6 +372,13 @@ func GetShopClaims(shopID string) ([]models.Claim, error) {
 		}
 		if dateClosed.Valid {
 			claim.DateClosed = &dateClosed.Time
+		}
+		if brand.Valid {
+			claim.Brand = &brand.String
+		}
+		if quantity.Valid {
+			q := int(quantity.Int32)
+			claim.Quantity = &q
 		}
 		if createdAt.Valid {
 			claim.CreatedAt = createdAt.Time
@@ -305,9 +407,9 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	}
 
 	query := `
-		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-		       c.supporting_doc_url, c.created_at, c.updated_at
+		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+		       c.supporting_doc_url, c.brand, c.quantity, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
 		WHERE c.id = $1
@@ -318,7 +420,8 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	row := db.QueryRow(context.Background(), query, claimID)
 
 	var claim models.Claim
-	var rejectionReason pgtype.Text
+	var rejectionReason, brand pgtype.Text
+	var quantity pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 	var shopName, contact pgtype.Text
 	var supportingDocURL pgtype.Text
@@ -338,6 +441,8 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 		&claim.Email,
 		&claim.CarPlate,
 		&supportingDocURL,
+		&brand,
+		&quantity,
 		&createdAt,
 		&updatedAt,
 	)
@@ -368,6 +473,13 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	if dateClosed.Valid {
 		claim.DateClosed = &dateClosed.Time
 	}
+	if brand.Valid {
+		claim.Brand = &brand.String
+	}
+	if quantity.Valid {
+		q := int(quantity.Int32)
+		claim.Quantity = &q
+	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time
 	}
@@ -377,6 +489,12 @@ func GetClaimByID(claimID string) (*models.Claim, error) {
 	if supportingDocURL.Valid {
 		claim.SupportingDocURL = &supportingDocURL.String
 	}
+
+	requestedTyreDetails, err := getRequestedTyreDetails(claim.ID)
+	if err != nil {
+		return nil, err
+	}
+	claim.RequestedTyreDetails = requestedTyreDetails
 
 	return &claim, nil
 }
@@ -388,11 +506,11 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	}
 
 	query := `
-		UPDATE claims 
+		UPDATE claims
 		SET status = $2, rejection_reason = $3, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-		          customer_name, phone_number, email, car_plate, supporting_doc_url, created_at, updated_at
+		          customer_name, phone_number, email, car_plate, supporting_doc_url, brand, quantity, created_at, updated_at
 	`
 
 	log.Printf("Executing SQL query: %s with params: [%s, %s, %s]", query, claimID, status, rejectionReason)
@@ -400,7 +518,8 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	row := db.QueryRow(context.Background(), query, claimID, status, rejectionReason)
 
 	var claim models.Claim
-	var rejectionReasonDB pgtype.Text
+	var rejectionReasonDB, brand pgtype.Text
+	var quantity pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 	var supportingDocURL pgtype.Text
 
@@ -417,6 +536,8 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 		&claim.Email,
 		&claim.CarPlate,
 		&supportingDocURL,
+		&brand,
+		&quantity,
 		&createdAt,
 		&updatedAt,
 	)
@@ -437,6 +558,13 @@ func UpdateClaimStatus(claimID string, status models.ClaimStatus, rejectionReaso
 	}
 	if dateClosed.Valid {
 		claim.DateClosed = &dateClosed.Time
+	}
+	if brand.Valid {
+		claim.Brand = &brand.String
+	}
+	if quantity.Valid {
+		q := int(quantity.Int32)
+		claim.Quantity = &q
 	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time
@@ -484,16 +612,17 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 
 	// 1. Update the claim's warranty_id
 	claimUpdateQuery := `
-		UPDATE claims 
+		UPDATE claims
 		SET warranty_id = $2, updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1
 		RETURNING id, warranty_id, shop_id, status, rejection_reason, date_settled, date_closed,
-		          customer_name, phone_number, email, car_plate, created_at, updated_at
+		          customer_name, phone_number, email, car_plate, brand, quantity, created_at, updated_at
 	`
 	row := tx.QueryRow(context.Background(), claimUpdateQuery, claimID, warrantyID)
 
 	var claim models.Claim
-	var rejectionReason pgtype.Text
+	var rejectionReason, brand pgtype.Text
+	var quantity pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 	err = row.Scan(
@@ -508,6 +637,8 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 		&claim.PhoneNumber,
 		&claim.Email,
 		&claim.CarPlate,
+		&brand,
+		&quantity,
 		&createdAt,
 		&updatedAt,
 	)
@@ -534,6 +665,13 @@ func UpdateClaimWarrantyID(claimID string, warrantyID string) (*models.Claim, er
 	}
 	if dateClosed.Valid {
 		claim.DateClosed = &dateClosed.Time
+	}
+	if brand.Valid {
+		claim.Brand = &brand.String
+	}
+	if quantity.Valid {
+		q := int(quantity.Int32)
+		claim.Quantity = &q
 	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time
@@ -589,9 +727,9 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 	switch statusType {
 	case "unacknowledged":
 		query = `
-			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-			       c.created_at, c.updated_at
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+			       c.brand, c.quantity, c.created_at, c.updated_at
 			FROM claims c
 			LEFT JOIN shops s ON c.shop_id = s.id
 			WHERE c.status = 'unacknowledged'
@@ -599,9 +737,9 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 		`
 	case "pending":
 		query = `
-			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-			       c.created_at, c.updated_at
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+			       c.brand, c.quantity, c.created_at, c.updated_at
 			FROM claims c
 			LEFT JOIN shops s ON c.shop_id = s.id
 			WHERE c.status = 'pending'
@@ -609,9 +747,9 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 		`
 	case "history":
 		query = `
-			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-			       c.created_at, c.updated_at
+			SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+			       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+			       c.brand, c.quantity, c.created_at, c.updated_at
 			FROM claims c
 			LEFT JOIN shops s ON c.shop_id = s.id
 			WHERE c.status IN ('approved', 'rejected')
@@ -632,7 +770,8 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 	claims := []models.Claim{} // Initialize empty slice
 	for rows.Next() {
 		var claim models.Claim
-		var rejectionReason pgtype.Text
+		var rejectionReason, brand pgtype.Text
+		var quantity pgtype.Int4
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 		var shopName, contact pgtype.Text
 
@@ -650,6 +789,8 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 			&claim.PhoneNumber,
 			&claim.Email,
 			&claim.CarPlate,
+			&brand,
+			&quantity,
 			&createdAt,
 			&updatedAt,
 		)
@@ -677,6 +818,13 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 		if dateClosed.Valid {
 			claim.DateClosed = &dateClosed.Time
 		}
+		if brand.Valid {
+			claim.Brand = &brand.String
+		}
+		if quantity.Valid {
+			q := int(quantity.Int32)
+			claim.Quantity = &q
+		}
 		if createdAt.Valid {
 			claim.CreatedAt = createdAt.Time
 		}
@@ -689,6 +837,16 @@ func GetClaimsByStatus(statusType string) ([]models.Claim, error) {
 
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating claims: %v", err)
+	}
+
+	// Attach each claim's dealer-requested per-tyre breakdown (used to prefill the master's
+	// Accept form)
+	for i := range claims {
+		requestedTyreDetails, err := getRequestedTyreDetails(claims[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		claims[i].RequestedTyreDetails = requestedTyreDetails
 	}
 
 	return claims, nil
@@ -879,19 +1037,21 @@ func CloseClaim(claimID string) (*models.Claim, error) {
 	}
 
 	query := `
-		UPDATE claims 
+		UPDATE claims
 		SET date_closed = CURRENT_TIMESTAMP,
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status IN ('approved', 'rejected')
-		RETURNING id, warranty_id, shop_id, status, rejection_reason, 
+		RETURNING id, warranty_id, shop_id, status, rejection_reason,
 		          date_settled, date_closed,
 		          customer_name, phone_number, email, car_plate,
+		          brand, quantity,
 		          created_at, updated_at`
 
 	log.Printf("Executing SQL query: %s with params: [%s]", query, claimID)
 
 	var claim models.Claim
-	var warrantyID, rejectionReason pgtype.Text
+	var warrantyID, rejectionReason, brand pgtype.Text
+	var quantity pgtype.Int4
 	var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 
 	err := db.QueryRow(context.Background(), query, claimID).Scan(
@@ -906,6 +1066,8 @@ func CloseClaim(claimID string) (*models.Claim, error) {
 		&claim.PhoneNumber,
 		&claim.Email,
 		&claim.CarPlate,
+		&brand,
+		&quantity,
 		&createdAt,
 		&updatedAt,
 	)
@@ -929,6 +1091,13 @@ func CloseClaim(claimID string) (*models.Claim, error) {
 	}
 	if dateClosed.Valid {
 		claim.DateClosed = &dateClosed.Time
+	}
+	if brand.Valid {
+		claim.Brand = &brand.String
+	}
+	if quantity.Valid {
+		q := int(quantity.Int32)
+		claim.Quantity = &q
 	}
 	if createdAt.Valid {
 		claim.CreatedAt = createdAt.Time

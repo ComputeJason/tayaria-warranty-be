@@ -9,19 +9,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// GetAllWarranties retrieves all warranties from the database
-func GetAllWarranties() ([]models.Warranty, error) {
+// GetAllWarranties retrieves warranties from the database, optionally filtered to those
+// purchased within [from, to] (inclusive, "YYYY-MM-DD"). An empty string leaves that side
+// unbounded, so calling with both empty returns every warranty (the full export).
+func GetAllWarranties(from, to string) ([]models.Warranty, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
 	query := `
-		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
+		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt, created_at, updated_at
 		FROM warranties
+		WHERE ($1 = '' OR purchase_date >= $1::date)
+		AND ($2 = '' OR purchase_date <= $2::date)
 		ORDER BY created_at DESC
 	`
 
-	rows, err := db.Query(context.Background(), query)
+	rows, err := db.Query(context.Background(), query, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query warranties: %v", err)
 	}
@@ -41,6 +45,7 @@ func GetAllWarranties() ([]models.Warranty, error) {
 			&purchaseDate,
 			&expiryDate,
 			&warranty.CarPlate,
+			&warranty.Brand,
 			&warranty.Receipt,
 			&createdAt,
 			&updatedAt,
@@ -77,22 +82,27 @@ func GetAllWarranties() ([]models.Warranty, error) {
 	return warranties, nil
 }
 
-// GetAllClaims retrieves all claims from the database
-func GetAllClaimsForExport() ([]models.Claim, error) {
+// GetAllClaimsForExport retrieves claims from the database, optionally filtered to those
+// created within [from, to] (inclusive, "YYYY-MM-DD"). An empty string leaves that side
+// unbounded, so calling with both empty returns every claim (the full export). The "to" bound
+// is widened to end-of-day since created_at carries a time component, not just a date.
+func GetAllClaimsForExport(from, to string) ([]models.Claim, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
 	query := `
-		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason, 
-		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate, 
-		       c.supporting_doc_url, c.created_at, c.updated_at
+		SELECT c.id, c.warranty_id, c.shop_id, s.shop_name, s.contact, c.status, c.rejection_reason,
+		       c.date_settled, c.date_closed, c.customer_name, c.phone_number, c.email, c.car_plate,
+		       c.supporting_doc_url, c.brand, c.quantity, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
+		WHERE ($1 = '' OR c.created_at >= $1::date)
+		AND ($2 = '' OR c.created_at < ($2::date + INTERVAL '1 day'))
 		ORDER BY c.created_at DESC
 	`
 
-	rows, err := db.Query(context.Background(), query)
+	rows, err := db.Query(context.Background(), query, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query claims: %v", err)
 	}
@@ -101,7 +111,8 @@ func GetAllClaimsForExport() ([]models.Claim, error) {
 	var claims []models.Claim
 	for rows.Next() {
 		var claim models.Claim
-		var rejectionReason pgtype.Text
+		var rejectionReason, brand pgtype.Text
+		var quantity pgtype.Int4
 		var dateSettled, dateClosed, createdAt, updatedAt pgtype.Timestamp
 		var shopName, contact pgtype.Text
 		var supportingDocURL pgtype.Text
@@ -122,6 +133,8 @@ func GetAllClaimsForExport() ([]models.Claim, error) {
 			&claim.Email,
 			&claim.CarPlate,
 			&supportingDocURL,
+			&brand,
+			&quantity,
 			&createdAt,
 			&updatedAt,
 		)
@@ -149,6 +162,13 @@ func GetAllClaimsForExport() ([]models.Claim, error) {
 		if dateClosed.Valid {
 			claim.DateClosed = &dateClosed.Time
 		}
+		if brand.Valid {
+			claim.Brand = &brand.String
+		}
+		if quantity.Valid {
+			q := int(quantity.Int32)
+			claim.Quantity = &q
+		}
 		if createdAt.Valid {
 			claim.CreatedAt = createdAt.Time
 		}
@@ -158,6 +178,12 @@ func GetAllClaimsForExport() ([]models.Claim, error) {
 		if supportingDocURL.Valid {
 			claim.SupportingDocURL = &supportingDocURL.String
 		}
+
+		requestedTyreDetails, err := getRequestedTyreDetails(claim.ID)
+		if err != nil {
+			return nil, err
+		}
+		claim.RequestedTyreDetails = requestedTyreDetails
 
 		claims = append(claims, claim)
 	}

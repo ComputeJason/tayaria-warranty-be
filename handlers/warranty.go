@@ -28,6 +28,7 @@ func RegisterWarranty(c *gin.Context) {
 	email := c.PostForm("email")
 	purchaseDateStr := c.PostForm("purchase_date")
 	carPlate := c.PostForm("car_plate")
+	brand := c.PostForm("brand")
 
 	// Parse purchase date
 	purchaseDate, err := time.Parse(time.RFC3339, purchaseDateStr)
@@ -49,6 +50,7 @@ func RegisterWarranty(c *gin.Context) {
 		Email:        email,
 		PurchaseDate: purchaseDate,
 		CarPlate:     carPlate,
+		Brand:        brand,
 		Receipt:      receiptURL,
 	})
 	if err != nil {
@@ -81,6 +83,38 @@ func GetWarrantiesByCarPlate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, warranties)
+}
+
+// GET /api/admin/warranties/verify/:carPlate
+// Used by the dealer claim form's "Verify" step: checks whether a car plate has any valid
+// warranty and, if so, returns the unique tyre brands registered to it (latest purchase first,
+// deduplicated so 2 warranties of the same brand only show up once) plus the full list of valid
+// warranties (used to show every receipt on file as a reference link on the claim form).
+func VerifyCarPlateBrands(c *gin.Context) {
+	carPlate := c.Param("carPlate")
+
+	warranties, err := db.GetAllValidWarrantiesForCarPlate(carPlate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(warranties) == 0 {
+		c.JSON(http.StatusOK, gin.H{"valid": false, "brands": []string{}, "warranties": []models.Warranty{}})
+		return
+	}
+
+	// warranties is already ordered latest-purchase-first, so this dedup preserves that order.
+	seen := make(map[string]bool)
+	brands := []string{}
+	for _, w := range warranties {
+		if !seen[w.Brand] {
+			seen[w.Brand] = true
+			brands = append(brands, w.Brand)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"valid": true, "brands": brands, "warranties": warranties})
 }
 
 // GET /api/user/warranties/valid/:carPlate

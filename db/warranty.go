@@ -18,6 +18,9 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	// Strip spaces so what's stored is always clean, regardless of how it was typed
+	warranty.CarPlate = normalizeCarPlate(warranty.CarPlate)
+
 	// Calculate expiry date (6 months from purchase date)
 	expiryDate := warranty.PurchaseDate.AddDate(0, 6, 0)
 
@@ -32,14 +35,14 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 	}
 
 	query := `
-		INSERT INTO warranties (id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
+		INSERT INTO warranties (id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt, created_at, updated_at
 	`
 
-	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s]",
+	log.Printf("Executing SQL query: %s with params: [%s, %s, %s, %s, %s, %s, %s, %s, %s]",
 		query, warrantyID, warranty.Name, warranty.PhoneNumber, warranty.Email,
-		warranty.PurchaseDate.Format("2006-01-02"), expiryDate.Format("2006-01-02"), warranty.CarPlate, receiptURL)
+		warranty.PurchaseDate.Format("2006-01-02"), expiryDate.Format("2006-01-02"), warranty.CarPlate, warranty.Brand, receiptURL)
 
 	row := db.QueryRow(context.Background(), query,
 		warrantyID,
@@ -49,6 +52,7 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 		warranty.PurchaseDate,
 		expiryDate,
 		warranty.CarPlate,
+		warranty.Brand,
 		receiptURL,
 	)
 
@@ -63,6 +67,7 @@ func CreateWarranty(warranty models.CreateWarrantyRequest) (*models.Warranty, er
 		&purchaseDate,
 		&expiryDateDB,
 		&result.CarPlate,
+		&result.Brand,
 		&result.Receipt,
 		&createdAt,
 		&updatedAt,
@@ -95,8 +100,10 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	carPlate = normalizeCarPlate(carPlate)
+
 	query := `
-		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
+		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt, created_at, updated_at
 		FROM warranties
 		WHERE car_plate = $1
 		ORDER BY created_at DESC
@@ -124,6 +131,7 @@ func GetWarrantiesByCarPlate(carPlate string) ([]models.Warranty, error) {
 			&purchaseDate,
 			&expiryDate,
 			&warranty.CarPlate,
+			&warranty.Brand,
 			&warranty.Receipt,
 			&createdAt,
 			&updatedAt,
@@ -166,10 +174,12 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	carPlate = normalizeCarPlate(carPlate)
+
 	query := `
-		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.brand, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
-		WHERE w.car_plate = $1 
+		WHERE w.car_plate = $1
 		AND w.expiry_date >= CURRENT_DATE
 		ORDER BY w.expiry_date DESC
 		LIMIT 1
@@ -191,6 +201,7 @@ func GetValidWarrantyByCarPlate(carPlate string) (*models.Warranty, error) {
 		&purchaseDate,
 		&expiryDate,
 		&warranty.CarPlate,
+		&warranty.Brand,
 		&warranty.Receipt,
 		&createdAt,
 		&updatedAt,
@@ -230,7 +241,7 @@ func GetWarrantyByID(warrantyID string) (*models.Warranty, error) {
 	}
 
 	query := `
-		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, receipt, created_at, updated_at
+		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt, created_at, updated_at
 		FROM warranties
 		WHERE id = $1
 	`
@@ -251,6 +262,7 @@ func GetWarrantyByID(warrantyID string) (*models.Warranty, error) {
 		&purchaseDate,
 		&expiryDate,
 		&warranty.CarPlate,
+		&warranty.Brand,
 		&warranty.Receipt,
 		&createdAt,
 		&updatedAt,
@@ -289,10 +301,12 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 		return nil, fmt.Errorf("database connection not initialized")
 	}
 
+	carPlate = normalizeCarPlate(carPlate)
+
 	query := `
-		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.receipt, w.created_at, w.updated_at
+		SELECT w.id, w.name, w.phone_number, w.email, w.purchase_date, w.expiry_date, w.car_plate, w.brand, w.receipt, w.created_at, w.updated_at
 		FROM warranties w
-		WHERE w.car_plate = $1 
+		WHERE w.car_plate = $1
 		AND w.expiry_date >= CURRENT_DATE
 		ORDER BY w.expiry_date DESC
 	`
@@ -319,6 +333,7 @@ func GetAllValidWarrantiesForCarPlate(carPlate string) ([]models.Warranty, error
 			&purchaseDate,
 			&expiryDate,
 			&warranty.CarPlate,
+			&warranty.Brand,
 			&warranty.Receipt,
 			&createdAt,
 			&updatedAt,
