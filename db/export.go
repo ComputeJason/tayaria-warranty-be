@@ -20,8 +20,8 @@ func GetAllWarranties(from, to string) ([]models.Warranty, error) {
 	query := `
 		SELECT id, name, phone_number, email, purchase_date, expiry_date, car_plate, brand, receipt, created_at, updated_at
 		FROM warranties
-		WHERE ($1 = '' OR purchase_date >= $1::date)
-		AND ($2 = '' OR purchase_date <= $2::date)
+		WHERE ($1 = '' OR purchase_date >= NULLIF($1, '')::date)
+		AND ($2 = '' OR purchase_date <= NULLIF($2, '')::date)
 		ORDER BY created_at DESC
 	`
 
@@ -97,8 +97,8 @@ func GetAllClaimsForExport(from, to string) ([]models.Claim, error) {
 		       c.supporting_doc_url, c.brand, c.quantity, c.created_at, c.updated_at
 		FROM claims c
 		LEFT JOIN shops s ON c.shop_id = s.id
-		WHERE ($1 = '' OR c.created_at >= $1::date)
-		AND ($2 = '' OR c.created_at < ($2::date + INTERVAL '1 day'))
+		WHERE ($1 = '' OR c.created_at >= NULLIF($1, '')::date)
+		AND ($2 = '' OR c.created_at < (NULLIF($2, '')::date + INTERVAL '1 day'))
 		ORDER BY c.created_at DESC
 	`
 

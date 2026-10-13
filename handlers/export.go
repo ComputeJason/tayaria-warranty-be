@@ -13,8 +13,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// earliestExportDate is the earliest date worth filtering by - used to default an unbounded
+// "from" when only "to" was given (see parseExportDateRange below).
+const earliestExportDate = "2025-08-01"
+
 // parseExportDateRange reads and validates the optional "from"/"to" query params shared by the
-// export endpoints. An empty string for either means that side is unbounded.
+// export endpoints. Leaving both blank exports everything, unbounded. Leaving exactly one blank
+// defaults the other side (from -> earliestExportDate, to -> today) rather than leaving it open
+// ended, so a partially-filled range still has a concrete, sensible bound.
 func parseExportDateRange(c *gin.Context) (from string, to string, err error) {
 	from = c.Query("from")
 	to = c.Query("to")
@@ -28,6 +34,15 @@ func parseExportDateRange(c *gin.Context) (from string, to string, err error) {
 		if _, err := time.Parse("2006-01-02", to); err != nil {
 			return "", "", fmt.Errorf("invalid 'to' date, expected YYYY-MM-DD")
 		}
+	}
+
+	// Checked against the original blank/filled state of each side, so "both blank" is never
+	// mistaken for "one blank" - it stays genuinely unfiltered.
+	if from == "" && to != "" {
+		from = earliestExportDate
+	}
+	if to == "" && from != "" {
+		to = time.Now().Format("2006-01-02")
 	}
 
 	return from, to, nil
