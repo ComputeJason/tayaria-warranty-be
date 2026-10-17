@@ -101,6 +101,9 @@ func main() {
 		// CSV export
 		masterRoutes.GET("/export/warranties", handlers.ExportWarrantiesCSV)
 		masterRoutes.GET("/export/claims", handlers.ExportClaimsCSV)
+		// dashboard
+		masterRoutes.GET("/dashboard", handlers.GetDashboard)
+		masterRoutes.GET("/dashboard/trend", handlers.GetDashboardTrend)
 	}
 
 	// Get port from environment variable or default to 8080
