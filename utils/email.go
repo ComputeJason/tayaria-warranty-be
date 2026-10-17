@@ -2,6 +2,8 @@ package utils
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"tayaria-warranty-be/db"
@@ -9,6 +11,22 @@ import (
 
 	"gopkg.in/gomail.v2"
 )
+
+// newMailDialer builds the SMTP dialer (Amazon SES) from SMTP_HOST, SMTP_PORT, SMTP_USERNAME
+// and SMTP_PASSWORD. Port 587 automatically uses STARTTLS in gomail.v2
+func newMailDialer() (*gomail.Dialer, error) {
+	host := os.Getenv("SMTP_HOST")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
+	if host == "" || username == "" || password == "" {
+		return nil, fmt.Errorf("SMTP_HOST, SMTP_USERNAME and SMTP_PASSWORD must be set")
+	}
+	port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
+	if err != nil {
+		port = 587
+	}
+	return gomail.NewDialer(host, port, username, password), nil
+}
 
 // SendWarrantyConfirmationEmail sends a confirmation email to the user when a warranty is registered
 func SendWarrantyConfirmationEmail(warranty models.Warranty) error {
@@ -19,49 +37,79 @@ func SendWarrantyConfirmationEmail(warranty models.Warranty) error {
 	m.SetHeader("To", warranty.Email)
 	m.SetHeader("Subject", "Warranty Registration Confirmation - Tayaria")
 
-	// Create email body with warranty details and important information
-	body := fmt.Sprintf(`
+	// Create email body with warranty details and important information. Kept deliberately
+	// plain (no emoji, minimal links, formal tone) and provided as both plain-text and HTML -
+	// outgoing mail scanners (e.g. the SpamAssassin outgoing scan on mail.kitloongholdings.com)
+	// score emoji-heavy/multi-link/HTML-only transactional mail harshly; see the 550 "classified
+	// as SPAM" rejections this used to trigger.
+	plainBody := fmt.Sprintf(`Dear %s,
+
+Thank you for registering your tyre warranty with Tayaria. Your registration has been completed successfully.
+
+Warranty Details:
+Car Plate: %s
+Purchase Date: %s
+Expiry Date: %s
+
+Warranty Terms:
+1. Valid for 6 months from the date of purchase.
+2. Valid only if the tyre has more than 6mm of tread depth remaining.
+3. Valid only for a minimum purchase of 2 tyres on a single receipt.
+4. Valid only with a digital receipt on file.
+5. Valid only for tyre damage that is beyond repair.
+
+If you need to file a claim, please visit your nearest Tayaria shop: https://tayaria.com/where-to-buy/
+
+For any questions, please contact us at contact.tayaria@kitloongholdings.com.
+
+Regards,
+The Tayaria Team
+`, warranty.Name, warranty.CarPlate,
+		warranty.PurchaseDate.Format("January 2, 2006"),
+		warranty.ExpiryDate.Format("January 2, 2006"))
+
+	htmlBody := fmt.Sprintf(`
 <html>
 <body>
 <p>Dear %s,</p>
 
-<p>🎉 Thank you for choosing Tayaria! Your warranty registration has been successfully completed.</p>
+<p>Thank you for registering your tyre warranty with Tayaria. Your registration has been completed successfully.</p>
 
-<p><strong>📋 WARRANTY DETAILS:</strong><br>
-• Car Plate: %s<br>
-• Purchase Date: %s<br>
-• Expiry Date: %s</p>
+<p><strong>Warranty Details:</strong><br>
+Car Plate: %s<br>
+Purchase Date: %s<br>
+Expiry Date: %s</p>
 
-<p><strong>⚠️ IMPORTANT WARRANTY TERMS:</strong><br>
-1) Valid until 6 months from the date of purchase<br>
-2) Valid only if tyre has above 6mm of tread depth left<br>
-3) Valid only after a minimum purchase of 2 pcs in single receipt<br>
-4) Valid only for digital receipt<br>
-5) Valid only for tyre damages that are beyond repair</p>
+<p><strong>Warranty Terms:</strong><br>
+1. Valid for 6 months from the date of purchase.<br>
+2. Valid only if the tyre has more than 6mm of tread depth remaining.<br>
+3. Valid only for a minimum purchase of 2 tyres on a single receipt.<br>
+4. Valid only with a digital receipt on file.<br>
+5. Valid only for tyre damage that is beyond repair.</p>
 
-<p>🔧 Need to file a claim? Head down to your nearest <a href="https://tayaria.com/where-to-buy/?search=Kuala+Lumpur%%2CFederal+Territory+of+Kuala+Lumpur%%2CMalaysia">Tayaria shop</a></p>
+<p>If you need to file a claim, please visit your nearest Tayaria shop: <a href="https://tayaria.com/where-to-buy/">https://tayaria.com/where-to-buy/</a></p>
 
-<p>💡 <a href="https://tayaria.com/">Learn more about us</a></p>
+<p>For any questions, please contact us at contact.tayaria@kitloongholdings.com.</p>
 
-<p>🚗 <a href="https://tayaria.com/brands/">Explore our premium tyre collection</a></p>
-
-<p>If you have any questions, please don't hesitate to contact us at contact.tayaria@kitloongholdings.com</p>
-
-<p>Warm regards,<br>
-The Tayaria Team 🛞</p>
+<p>Regards,<br>
+The Tayaria Team</p>
 </body>
 </html>
 `, warranty.Name, warranty.CarPlate,
 		warranty.PurchaseDate.Format("January 2, 2006"),
 		warranty.ExpiryDate.Format("January 2, 2006"))
 
-	m.SetBody("text/html", body)
+	// Plain-text first, HTML as the richer alternative - the standard multipart/alternative
+	// order, and itself a commonly-cited factor in outgoing spam scoring when missing entirely.
+	m.SetBody("text/plain", plainBody)
+	m.AddAlternative("text/html", htmlBody)
 
 	fmt.Printf("📧 Email body prepared, attempting to send...\n")
 
-	// Configure SMTP dialer
-	// Port 587 automatically uses STARTTLS in gomail.v2
-	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+	d, err := newMailDialer()
+	if err != nil {
+		return fmt.Errorf("failed to configure email: %w", err)
+	}
 
 	// Send the email
 	if err := d.DialAndSend(m); err != nil {
@@ -140,9 +188,10 @@ func SendClaimAcceptanceEmail(claim *models.Claim) error {
 `
 	m.SetBody("text/html", body)
 
-	// Configure SMTP dialer
-	// Port 587 automatically uses STARTTLS in gomail.v2
-	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+	d, err := newMailDialer()
+	if err != nil {
+		return fmt.Errorf("failed to configure email: %w", err)
+	}
 
 	// Send the email
 	if err := d.DialAndSend(m); err != nil {
@@ -209,9 +258,10 @@ func SendClaimCreationEmail(claim *models.Claim) error {
 
 	fmt.Printf("Email body prepared, attempting to send...\n")
 
-	// Configure SMTP dialer
-	// Port 587 automatically uses STARTTLS in gomail.v2
-	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+	d, err := newMailDialer()
+	if err != nil {
+		return fmt.Errorf("failed to configure email: %w", err)
+	}
 
 	// Send the email
 	if err := d.DialAndSend(m); err != nil {
@@ -305,9 +355,10 @@ func SendClaimRejectionEmail(claim *models.Claim) error {
 
 	fmt.Printf("Email body prepared, attempting to send...\n")
 
-	// Configure SMTP dialer
-	// Port 587 automatically uses STARTTLS in gomail.v2
-	d := gomail.NewDialer("mail.kitloongholdings.com", 587, "contact.tayaria@kitloongholdings.com", "#Temp0000")
+	d, err := newMailDialer()
+	if err != nil {
+		return fmt.Errorf("failed to configure email: %w", err)
+	}
 
 	// Send the email
 	if err := d.DialAndSend(m); err != nil {

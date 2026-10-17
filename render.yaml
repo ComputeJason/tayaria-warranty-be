@@ -15,4 +15,12 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: STORAGE_BUCKET
-        sync: false 
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
